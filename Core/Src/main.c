@@ -26,6 +26,7 @@
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 #include "sogi.h"
+#include <stdint.h>
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -48,18 +49,50 @@
 /* USER CODE BEGIN PV */
 
 
-#define ADC_BUF_LEN  1
-volatile uint16_t adc_buf[ADC_BUF_LEN];
-volatile uint16_t g_adc_raw = 0;
+#define ADC_BUF_LEN  3
 
-static volatile float g_v_alpha = 0.0f;
-static volatile float g_v_beta  = 0.0f;
-static volatile float g_e       = 0.0f;
+/* Differential ADC result should be treated as signed */
+volatile int16_t adc_buf[ADC_BUF_LEN];
 
+/* Raw (counts) per phase */
+static volatile int16_t g_adc_raw_V = 0;
+static volatile int16_t g_adc_raw_W = 0;
+static volatile int16_t g_adc_raw_U = 0;
 
-/* SOGI instance */
+/* Instant (unfiltered) input to SOGI (in volts at ADC pins) */
+static volatile float g_v_in_V = 0.0f;
+static volatile float g_v_in_W = 0.0f;
+static volatile float g_v_in_U = 0.0f;
+
+/* Filtered outputs (v_alpha) per phase */
+static volatile float g_v_alpha_V = 0.0f;
+static volatile float g_v_alpha_W = 0.0f;
+static volatile float g_v_alpha_U = 0.0f;
+
+/* Optional: keep v_beta and e too (useful for debug) */
+static volatile float g_v_beta_V  = 0.0f;
+static volatile float g_v_beta_W  = 0.0f;
+static volatile float g_v_beta_U  = 0.0f;
+
+static volatile float g_e_V       = 0.0f;
+static volatile float g_e_W       = 0.0f;
+static volatile float g_e_U       = 0.0f;
+/* SOGI instances (one per phase) */
 static SOGI_Config sogi_cfg;
-static SOGI_State  sogi_st;
+static SOGI_State  sogi_st_V;
+static SOGI_State  sogi_st_W;
+static SOGI_State  sogi_st_U;
+
+
+
+
+float Vu_inst ;
+float Vv_inst;
+float Vw_inst ;
+
+float Vu_filt;
+float Vv_filt;
+float Vw_filt ;
 
 /* USER CODE END PV */
 
@@ -74,12 +107,39 @@ void SystemClock_Config(void);
 
 typedef struct
 {
-    float v_alpha;
-    float v_beta;
-    float e;
-} SOGI_LastOut;
-SOGI_LastOut o ;
-SOGI_LastOut SOGI_GetLast(void);
+    float v_in;     /* unfiltered instantaneous */
+    float v_alpha;  /* filtered in-phase */
+    float v_beta;   /* 90deg component */
+    float e;        /* v_in - v_alpha */
+} SOGI_PhaseOut;
+
+typedef struct
+{
+    SOGI_PhaseOut U;
+    SOGI_PhaseOut V;
+    SOGI_PhaseOut W;
+} SOGI_3PhaseOut;
+
+
+
+/* Get latest snapshot (safe copy) */
+static SOGI_3PhaseOut SOGI_GetLast3(void);
+
+/* ---- ADC differential counts -> volts at ADC pins ----
+   For STM32G4 differential mode (12-bit):
+   code range is typically -2048..+2047 (signed).
+   LSB ˜ Vref / 2048.
+
+   If your Vref is not 3.3V, change it here.
+*/
+#define ADC_VREF_VOLTS      (3.3f)
+#define ADC_DIFF_FULLSCALE  (2048.0f)   /* 2^(12-1) */
+
+static inline float adc_diff_to_volts(int16_t raw_diff)
+{
+    /* volts at ADC input pins (OUTP-OUTN) */
+    return ((float)raw_diff) * (ADC_VREF_VOLTS / ADC_DIFF_FULLSCALE);
+}
 /* USER CODE END 0 */
 
 /**
@@ -116,26 +176,30 @@ int main(void)
   MX_TIM6_Init();
   /* USER CODE BEGIN 2 */
 	//diff mode Calib
+
 	HAL_ADC_Stop(&hadc4);
 	if (HAL_ADCEx_Calibration_Start(&hadc4, ADC_DIFFERENTIAL_ENDED) != HAL_OK)
 	{
 			Error_Handler();
 	}
 
-
-	sogi_cfg.Ts = 1.0f / 10000.0f; //TIM6 = 10kHz                
+	/* SOGI config (10 kHz sample, 50 Hz) */
+	sogi_cfg.Ts = 1.0f / 10000.0f;               // TIM6 = 10kHz
 	sogi_cfg.k  = 1.0f;
-	sogi_cfg.w  = 2.0f * 3.1415926f * 50.0f;      
-	SOGI_Init(&sogi_st, &sogi_cfg);
+	sogi_cfg.w  = 2.0f * 3.1415926f * 50.0f;
 
-	
+	/* Init three SOGIs */
+	SOGI_Init(&sogi_st_V, &sogi_cfg);
+	SOGI_Init(&sogi_st_W, &sogi_cfg);
+	SOGI_Init(&sogi_st_U, &sogi_cfg);
+
 	HAL_TIM_Base_Start(&htim6);
 
-
+	/* DMA length must match Number of Conversions = 3 */
 	if (HAL_ADC_Start_DMA(&hadc4, (uint32_t*)adc_buf, ADC_BUF_LEN) != HAL_OK)
 	{
 			Error_Handler();
-}
+	}
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -143,7 +207,19 @@ int main(void)
   while (1)
   {
 		
-		 o = SOGI_GetLast();
+    
+		SOGI_3PhaseOut o = SOGI_GetLast3();
+
+     Vu_inst = o.U.v_in;
+     Vv_inst = o.V.v_in;
+     Vw_inst = o.W.v_in;
+		
+     Vu_filt = o.U.v_alpha;
+     Vv_filt = o.V.v_alpha;
+     Vw_filt = o.W.v_alpha;
+
+    (void)Vu_inst; (void)Vv_inst; (void)Vw_inst;
+    (void)Vu_filt; (void)Vv_filt; (void)Vw_filt;
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
@@ -198,46 +274,70 @@ void SystemClock_Config(void)
 }
 
 /* USER CODE BEGIN 4 */
-static inline float adc_to_float(uint16_t raw)
-{
-    return (float)raw;  
-}
 
 void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef* hadc)
 {
     if (hadc->Instance == ADC4)
     {
-        uint16_t raw = adc_buf[0];
-        g_adc_raw = raw;
+        /* DMA order = rank order */
+        int16_t raw_V = adc_buf[0];   // Rank1 Channel5  -> V
+        int16_t raw_W = adc_buf[1];   // Rank2 Channel1  -> W
+        int16_t raw_U = adc_buf[2];   // Rank3 Channel3  -> U
 
-        float v_in = adc_to_float(raw);
+        g_adc_raw_V = raw_V;
+        g_adc_raw_W = raw_W;
+        g_adc_raw_U = raw_U;
 
+        /* Convert to volts (at ADC pins, differential) */
+        float v_in_V = adc_diff_to_volts(raw_V);
+        float v_in_W = adc_diff_to_volts(raw_W);
+        float v_in_U = adc_diff_to_volts(raw_U);
+
+        g_v_in_V = v_in_V;
+        g_v_in_W = v_in_W;
+        g_v_in_U = v_in_U;
+
+        /* Run 3 independent SOGIs */
         SOGI_Output y;
-        SOGI_Step(&sogi_st, &sogi_cfg, v_in, &y);
 
-        g_v_alpha = y.v_alpha;
-        g_v_beta  = y.v_beta;
-        g_e       = y.e;
+        SOGI_Step(&sogi_st_V, &sogi_cfg, v_in_V, &y);
+        g_v_alpha_V = y.v_alpha;  g_v_beta_V = y.v_beta;  g_e_V = y.e;
+
+        SOGI_Step(&sogi_st_W, &sogi_cfg, v_in_W, &y);
+        g_v_alpha_W = y.v_alpha;  g_v_beta_W = y.v_beta;  g_e_W = y.e;
+
+        SOGI_Step(&sogi_st_U, &sogi_cfg, v_in_U, &y);
+        g_v_alpha_U = y.v_alpha;  g_v_beta_U = y.v_beta;  g_e_U = y.e;
     }
 }
 
-SOGI_LastOut SOGI_GetLast(void)
+static SOGI_3PhaseOut SOGI_GetLast3(void)
 {
-    SOGI_LastOut out;
+    SOGI_3PhaseOut out;
 
     __disable_irq();
-    out.v_alpha = g_v_alpha;
-    out.v_beta  = g_v_beta;
-    out.e       = g_e;
+
+    out.V.v_in    = g_v_in_V;
+    out.V.v_alpha = g_v_alpha_V;
+    out.V.v_beta  = g_v_beta_V;
+    out.V.e       = g_e_V;
+
+    out.W.v_in    = g_v_in_W;
+    out.W.v_alpha = g_v_alpha_W;
+    out.W.v_beta  = g_v_beta_W;
+    out.W.e       = g_e_W;
+
+    out.U.v_in    = g_v_in_U;
+    out.U.v_alpha = g_v_alpha_U;
+    out.U.v_beta  = g_v_beta_U;
+    out.U.e       = g_e_U;
+
     __enable_irq();
 
     return out;
 }
 
-/* USER CODE END 4 */
 
-
-/* USER CODE END 4 */
 /* USER CODE END 4 */
 
 /**

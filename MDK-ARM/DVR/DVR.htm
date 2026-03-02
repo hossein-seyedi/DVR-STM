@@ -3,9 +3,9 @@
 <title>Static Call Graph - [DVR\DVR.axf]</title></head>
 <body><HR>
 <H1>Static Call Graph for image DVR\DVR.axf</H1><HR>
-<BR><P>#&#060CALLGRAPH&#062# ARM Linker, 6240002: Last Updated: Thu Feb 26 16:57:14 2026
+<BR><P>#&#060CALLGRAPH&#062# ARM Linker, 6240002: Last Updated: Mon Mar  2 13:51:04 2026
 <BR><P>
-<H3>Maximum Stack Usage =        380 bytes + Unknown(Functions without stacksize, Cycles, Untraceable Function Pointers)</H3><H3>
+<H3>Maximum Stack Usage =        420 bytes + Unknown(Functions without stacksize, Cycles, Untraceable Function Pointers)</H3><H3>
 Call chain for Maximum Stack Depth:</H3>
 __rt_entry_main &rArr; main &rArr; MX_ADC4_Init &rArr; HAL_ADC_ConfigChannel &rArr; LL_ADC_SetOffset
 <P>
@@ -263,7 +263,7 @@ Global Symbols
 <P><STRONG><a name="[100]"></a>__rt_entry_postsh_1</STRONG> (Thumb, 0 bytes, Stack size unknown bytes, __rtentry2.o(.ARM.Collect$$rtentry$$00000009))
 
 <P><STRONG><a name="[7f]"></a>__rt_entry_main</STRONG> (Thumb, 0 bytes, Stack size unknown bytes, __rtentry2.o(.ARM.Collect$$rtentry$$0000000D))
-<BR><BR>[Stack]<UL><LI>Max Depth = 380 + Unknown Stack Size
+<BR><BR>[Stack]<UL><LI>Max Depth = 420 + Unknown Stack Size
 <LI>Call Chain = __rt_entry_main &rArr; main &rArr; MX_ADC4_Init &rArr; HAL_ADC_ConfigChannel &rArr; LL_ADC_SetOffset
 </UL>
 <BR>[Calls]<UL><LI><a href="#[80]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;main
@@ -668,7 +668,7 @@ Global Symbols
 </UL>
 
 <P><STRONG><a name="[72]"></a>ADC_DMAConvCplt</STRONG> (Thumb, 212 bytes, Stack size 16 bytes, stm32g4xx_hal_adc.o(.text.ADC_DMAConvCplt))
-<BR><BR>[Stack]<UL><LI>Max Depth = 96<LI>Call Chain = ADC_DMAConvCplt &rArr; HAL_ADC_ConvCpltCallback &rArr; SOGI_Step
+<BR><BR>[Stack]<UL><LI>Max Depth = 120<LI>Call Chain = ADC_DMAConvCplt &rArr; HAL_ADC_ConvCpltCallback &rArr; SOGI_Step
 </UL>
 <BR>[Calls]<UL><LI><a href="#[92]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;HAL_ADC_ErrorCallback
 <LI><a href="#[90]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;LL_ADC_REG_IsTriggerSourceSWStart
@@ -767,11 +767,11 @@ Global Symbols
 <BR>[Called By]<UL><LI><a href="#[d4]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;MX_ADC4_Init
 </UL>
 
-<P><STRONG><a name="[91]"></a>HAL_ADC_ConvCpltCallback</STRONG> (Thumb, 132 bytes, Stack size 32 bytes, main.o(.text.HAL_ADC_ConvCpltCallback))
-<BR><BR>[Stack]<UL><LI>Max Depth = 80<LI>Call Chain = HAL_ADC_ConvCpltCallback &rArr; SOGI_Step
+<P><STRONG><a name="[91]"></a>HAL_ADC_ConvCpltCallback</STRONG> (Thumb, 350 bytes, Stack size 56 bytes, main.o(.text.HAL_ADC_ConvCpltCallback))
+<BR><BR>[Stack]<UL><LI>Max Depth = 104<LI>Call Chain = HAL_ADC_ConvCpltCallback &rArr; SOGI_Step
 </UL>
 <BR>[Calls]<UL><LI><a href="#[aa]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;SOGI_Step
-<LI><a href="#[a9]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;adc_to_float
+<LI><a href="#[a9]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;adc_diff_to_volts
 </UL>
 <BR>[Called By]<UL><LI><a href="#[72]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;ADC_DMAConvCplt
 </UL>
@@ -790,7 +790,7 @@ Global Symbols
 </UL>
 
 <P><STRONG><a name="[ab]"></a>HAL_ADC_Init</STRONG> (Thumb, 990 bytes, Stack size 64 bytes, stm32g4xx_hal_adc.o(.text.HAL_ADC_Init))
-<BR><BR>[Stack]<UL><LI>Max Depth = 260 + Unknown Stack Size
+<BR><BR>[Stack]<UL><LI>Max Depth = 252 + Unknown Stack Size
 <LI>Call Chain = HAL_ADC_Init &rArr; HAL_ADC_MspInit &rArr; HAL_GPIO_Init
 </UL>
 <BR>[Calls]<UL><LI><a href="#[8b]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;LL_ADC_INJ_IsConversionOngoing
@@ -806,8 +806,8 @@ Global Symbols
 <BR>[Called By]<UL><LI><a href="#[d4]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;MX_ADC4_Init
 </UL>
 
-<P><STRONG><a name="[ac]"></a>HAL_ADC_MspInit</STRONG> (Thumb, 316 bytes, Stack size 152 bytes, adc.o(.text.HAL_ADC_MspInit))
-<BR><BR>[Stack]<UL><LI>Max Depth = 196 + Unknown Stack Size
+<P><STRONG><a name="[ac]"></a>HAL_ADC_MspInit</STRONG> (Thumb, 316 bytes, Stack size 144 bytes, adc.o(.text.HAL_ADC_MspInit))
+<BR><BR>[Stack]<UL><LI>Max Depth = 188 + Unknown Stack Size
 <LI>Call Chain = HAL_ADC_MspInit &rArr; HAL_GPIO_Init
 </UL>
 <BR>[Calls]<UL><LI><a href="#[b6]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;HAL_DMA_Init
@@ -1020,7 +1020,7 @@ Global Symbols
 <P><STRONG><a name="[2]"></a>HardFault_Handler</STRONG> (Thumb, 4 bytes, Stack size 0 bytes, stm32g4xx_it.o(.text.HardFault_Handler))
 <BR>[Address Reference Count : 1]<UL><LI> startup_stm32g484xx.o(RESET)
 </UL>
-<P><STRONG><a name="[d4]"></a>MX_ADC4_Init</STRONG> (Thumb, 168 bytes, Stack size 48 bytes, adc.o(.text.MX_ADC4_Init))
+<P><STRONG><a name="[d4]"></a>MX_ADC4_Init</STRONG> (Thumb, 242 bytes, Stack size 48 bytes, adc.o(.text.MX_ADC4_Init))
 <BR><BR>[Stack]<UL><LI>Max Depth = 348 + Unknown Stack Size
 <LI>Call Chain = MX_ADC4_Init &rArr; HAL_ADC_ConfigChannel &rArr; LL_ADC_SetOffset
 </UL>
@@ -1065,12 +1065,6 @@ Global Symbols
 <P><STRONG><a name="[8]"></a>PendSV_Handler</STRONG> (Thumb, 2 bytes, Stack size 0 bytes, stm32g4xx_it.o(.text.PendSV_Handler))
 <BR>[Address Reference Count : 1]<UL><LI> startup_stm32g484xx.o(RESET)
 </UL>
-<P><STRONG><a name="[de]"></a>SOGI_GetLast</STRONG> (Thumb, 64 bytes, Stack size 16 bytes, main.o(.text.SOGI_GetLast))
-<BR><BR>[Stack]<UL><LI>Max Depth = 16<LI>Call Chain = SOGI_GetLast
-</UL>
-<BR>[Called By]<UL><LI><a href="#[80]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;main
-</UL>
-
 <P><STRONG><a name="[dc]"></a>SOGI_Init</STRONG> (Thumb, 42 bytes, Stack size 8 bytes, sogi.o(.text.SOGI_Init))
 <BR><BR>[Stack]<UL><LI>Max Depth = 8<LI>Call Chain = SOGI_Init
 </UL>
@@ -1118,12 +1112,11 @@ Global Symbols
 <P><STRONG><a name="[5]"></a>UsageFault_Handler</STRONG> (Thumb, 4 bytes, Stack size 0 bytes, stm32g4xx_it.o(.text.UsageFault_Handler))
 <BR>[Address Reference Count : 1]<UL><LI> startup_stm32g484xx.o(RESET)
 </UL>
-<P><STRONG><a name="[80]"></a>main</STRONG> (Thumb, 198 bytes, Stack size 32 bytes, main.o(.text.main))
-<BR><BR>[Stack]<UL><LI>Max Depth = 380 + Unknown Stack Size
+<P><STRONG><a name="[80]"></a>main</STRONG> (Thumb, 270 bytes, Stack size 72 bytes, main.o(.text.main))
+<BR><BR>[Stack]<UL><LI>Max Depth = 420 + Unknown Stack Size
 <LI>Call Chain = main &rArr; MX_ADC4_Init &rArr; HAL_ADC_ConfigChannel &rArr; LL_ADC_SetOffset
 </UL>
-<BR>[Calls]<UL><LI><a href="#[de]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;SOGI_GetLast
-<LI><a href="#[b7]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;HAL_ADC_Start_DMA
+<BR>[Calls]<UL><LI><a href="#[b7]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;HAL_ADC_Start_DMA
 <LI><a href="#[dd]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;HAL_TIM_Base_Start
 <LI><a href="#[dc]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;SOGI_Init
 <LI><a href="#[b4]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;Error_Handler
@@ -1135,6 +1128,7 @@ Global Symbols
 <LI><a href="#[db]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;MX_GPIO_Init
 <LI><a href="#[d9]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;SystemClock_Config
 <LI><a href="#[bf]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;HAL_Init
+<LI><a href="#[de]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;SOGI_GetLast3
 </UL>
 <BR>[Called By]<UL><LI><a href="#[7f]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;__rt_entry_main
 </UL>
@@ -1150,8 +1144,14 @@ Global Symbols
 <H3>
 Local Symbols
 </H3>
-<P><STRONG><a name="[a9]"></a>adc_to_float</STRONG> (Thumb, 22 bytes, Stack size 4 bytes, main.o(.text.adc_to_float))
-<BR><BR>[Stack]<UL><LI>Max Depth = 4<LI>Call Chain = adc_to_float
+<P><STRONG><a name="[de]"></a>SOGI_GetLast3</STRONG> (Thumb, 162 bytes, Stack size 4 bytes, main.o(.text.SOGI_GetLast3))
+<BR><BR>[Stack]<UL><LI>Max Depth = 4<LI>Call Chain = SOGI_GetLast3
+</UL>
+<BR>[Called By]<UL><LI><a href="#[80]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;main
+</UL>
+
+<P><STRONG><a name="[a9]"></a>adc_diff_to_volts</STRONG> (Thumb, 32 bytes, Stack size 4 bytes, main.o(.text.adc_diff_to_volts))
+<BR><BR>[Stack]<UL><LI>Max Depth = 4<LI>Call Chain = adc_diff_to_volts
 </UL>
 <BR>[Called By]<UL><LI><a href="#[91]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;HAL_ADC_ConvCpltCallback
 </UL>
