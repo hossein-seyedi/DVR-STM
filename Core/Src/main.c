@@ -25,14 +25,55 @@
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
-#include "sogi.h"
 #include <stdint.h>
-#include "pwm_svpwm.h"
+#include <stdbool.h>
+#include <math.h>
+#include "sogi.h"
+#include "pwm_3leg_sine.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
 /* USER CODE BEGIN PTD */
+typedef struct
+{
+    float u;
+    float v;
+    float w;
+} Phase3f;
 
+typedef struct
+{
+    float alpha;
+    float beta;
+} AlphaBeta2f;
+
+typedef enum
+{
+    REF_MODE_SOGI_FILTERED = 0,
+    REF_MODE_PLL_CLEAN     = 1
+} ReferenceMode_t;
+
+typedef enum
+{
+    PWM_MODE_MEASURED_DIRECT      = 0, /* output = measured voltage */
+    PWM_MODE_REFERENCE_DIRECT     = 1, /* output = reference voltage */
+    PWM_MODE_INJECTION_NEG_ERROR  = 2  /* output = measured - reference */
+} PwmMode_t;
+
+typedef struct
+{
+    float ts;
+    float kp;
+    float ki;
+
+    float theta;          /* PLL vector angle */
+    float omega;          /* rad/s */
+    float omega_nominal;  /* rad/s */
+
+    float integrator;
+    float phase_error;
+    float freq_hz;
+} AB_PLL_t;
 /* USER CODE END PTD */
 
 /* Private define ------------------------------------------------------------*/
@@ -48,62 +89,91 @@
 /* Private variables ---------------------------------------------------------*/
 
 /* USER CODE BEGIN PV */
-static PWM_SVPWM_Handle g_pwm;
-static PWM_SVPWM_Config g_pwm_cfg;
-static PWM_SVPWM_Out    g_pwm_dbg;  
+static PWM_3Leg_Handle g_pwm_3leg;
+static PWM_3Leg_Config g_pwm_3leg_cfg;
+static PWM_3Leg_Debug  g_pwm_3leg_dbg;
 
-#define ADC_BUF_LEN  3
-
-/* Differential ADC result must be UNSIGNED (0 to 4095) */
+#define ADC_BUF_LEN 3
 volatile uint16_t adc_buf[ADC_BUF_LEN];
 
-/* Raw (counts) per phase */
-static volatile uint16_t g_adc_raw_V = 0;
-static volatile uint16_t g_adc_raw_W = 0;
-static volatile uint16_t g_adc_raw_U = 0;
+/* =========================
+   MODE VARIABLES FOR WATCH
+   =========================
 
-/* Instant (unfiltered) input to SOGI (in volts at ADC pins) */
-static volatile float g_v_in_V = 0.0f;
-static volatile float g_v_in_W = 0.0f;
-static volatile float g_v_in_U = 0.0f;
+   g_reference_mode:
+   0 = use SOGI filtered voltage as reference
+   1 = use PLL clean sine as reference
 
-/* Filtered outputs (v_alpha) per phase */
-static volatile float g_v_alpha_V = 0.0f;
-static volatile float g_v_alpha_W = 0.0f;
-static volatile float g_v_alpha_U = 0.0f;
+   g_output_mode:
+   0 = PWM output = measured voltage
+   1 = PWM output = reference voltage
+   2 = PWM output = injection voltage = measured - reference
+*/
+volatile int g_reference_mode = 0;
+volatile int g_output_mode    = 1;
 
-/* Optional: keep v_beta and e too (useful for debug) */
-static volatile float g_v_beta_V  = 0.0f;
-static volatile float g_v_beta_W  = 0.0f;
-static volatile float g_v_beta_U  = 0.0f;
+/* user settings */
+volatile float g_clean_reference_phase_peak_volts = 325.0f;
+volatile float g_pwm_reference_gain = 0.20f;
 
-static volatile float g_e_V       = 0.0f;
-static volatile float g_e_W       = 0.0f;
-static volatile float g_e_U       = 0.0f;
-/* SOGI instances (one per phase) */
+/* raw ADC */
+volatile uint16_t g_adc_raw_u = 0;
+volatile uint16_t g_adc_raw_v = 0;
+volatile uint16_t g_adc_raw_w = 0;
+
+/* measured voltages */
+volatile float g_meas_u = 0.0f;
+volatile float g_meas_v = 0.0f;
+volatile float g_meas_w = 0.0f;
+
+/* SOGI outputs */
+volatile float g_sogi_u_alpha = 0.0f;
+volatile float g_sogi_u_beta  = 0.0f;
+volatile float g_sogi_v_alpha = 0.0f;
+volatile float g_sogi_v_beta  = 0.0f;
+volatile float g_sogi_w_alpha = 0.0f;
+volatile float g_sogi_w_beta  = 0.0f;
+
+/* PLL variables */
+volatile float g_pll_theta = 0.0f;
+volatile float g_pll_freq_hz = 50.0f;
+volatile float g_pll_error = 0.0f;
+
+/* active reference */
+volatile float g_ref_u = 0.0f;
+volatile float g_ref_v = 0.0f;
+volatile float g_ref_w = 0.0f;
+
+/* error and injection */
+volatile float g_err_u = 0.0f;
+volatile float g_err_v = 0.0f;
+volatile float g_err_w = 0.0f;
+
+volatile float g_inj_u = 0.0f;
+volatile float g_inj_v = 0.0f;
+volatile float g_inj_w = 0.0f;
+
+/* final PWM command */
+volatile float g_pwm_u = 0.0f;
+volatile float g_pwm_v = 0.0f;
+volatile float g_pwm_w = 0.0f;
+
+/* SOGI objects */
 static SOGI_Config sogi_cfg;
-static SOGI_State  sogi_st_V;
-static SOGI_State  sogi_st_W;
-static SOGI_State  sogi_st_U;
+static SOGI_State  sogi_u_state;
+static SOGI_State  sogi_v_state;
+static SOGI_State  sogi_w_state;
 
+/* simple PLL internal variables */
+static float pll_ts = 0.0001f;         /* 10 kHz */
+static float pll_kp = 80.0f;
+static float pll_ki = 2000.0f;
+static float pll_integrator = 0.0f;
+static float pll_omega = 2.0f * 3.1415926f * 50.0f;
+static float pll_omega_nominal = 2.0f * 3.1415926f * 50.0f;
 
-uint32_t timer_tick = 0;
-uint32_t timer_tick_2 = 0;
-
-
-float Vu_inst ;
-float Vv_inst;
-float Vw_inst ;
-
-float Vu_filt;
-float Vv_filt;
-float Vw_filt ;
-
-float U_error_ref_grid = 0.f;
-float V_error_ref_grid = 0.f;
-float W_error_ref_grid = 0.f;
-
-
+volatile float g_direct_output_sign = 1.0f;
+volatile float g_injection_output_sign = -1.0f;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -114,50 +184,234 @@ void SystemClock_Config(void);
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
+#define PI_F            3.1415926f
+#define TWO_PI_F        (2.0f * PI_F)
+#define TWO_PI_OVER_3   (2.0f * PI_F / 3.0f)
+#define SQRT3_OVER_2    0.8660254f
 
-typedef struct
+#define ADC_VREF        3.3f
+#define ADC_MAX_VALUE   4095.0f
+#define AMC_GAIN        0.4f
+#define RESISTOR_RATIO  100.6f
+
+static float clampf(float x, float min_val, float max_val)
 {
-    float v_in;     /* unfiltered instantaneous */
-    float v_alpha;  /* filtered in-phase */
-    float v_beta;   /* 90deg component */
-    float e;        /* v_in - v_alpha */
-} SOGI_PhaseOut;
+    if (x < min_val) return min_val;
+    if (x > max_val) return max_val;
+    return x;
+}
 
-typedef struct
+static float wrap_pm_pi(float x)
 {
-    SOGI_PhaseOut U;
-    SOGI_PhaseOut V;
-    SOGI_PhaseOut W;
-} SOGI_3PhaseOut;
+    while (x > PI_F)  x -= TWO_PI_F;
+    while (x < -PI_F) x += TWO_PI_F;
+    return x;
+}
 
-
-
-/* Get latest snapshot (safe copy) */
-static SOGI_3PhaseOut SOGI_GetLast3(void);
-
-
-#define V_REF 3.3f               
-#define ADC_MAX_VAL 4095.0f     
-#define AMC_GAIN 0.4f            
-#define RESISTOR_RATIO 100.6f    
-
-
-float adc_diff_to_volts(uint32_t adc_raw)
+static float wrap_0_2pi(float x)
 {
-    float v_diff_adc;
-    float v_amc_input;
-    float v_line;
+    while (x >= TWO_PI_F) x -= TWO_PI_F;
+    while (x < 0.0f)      x += TWO_PI_F;
+    return x;
+}
 
- 
-    v_diff_adc = (((float)adc_raw / ADC_MAX_VAL) * 2.0f * V_REF) - V_REF;
+static float adc_diff_to_volts(uint32_t adc_raw)
+{
+    float adc_diff_volts;
+    float sensor_input_volts;
+    float line_volts;
 
+    adc_diff_volts     = (((float)adc_raw / ADC_MAX_VALUE) * 2.0f * ADC_VREF) - ADC_VREF;
+    sensor_input_volts = adc_diff_volts / AMC_GAIN;
+    line_volts         = sensor_input_volts * RESISTOR_RATIO;
 
-    v_amc_input = v_diff_adc / AMC_GAIN;
+    return line_volts;
+}
 
-  
-    v_line = v_amc_input * RESISTOR_RATIO;
+static void read_adc_voltages(void)
+{
+    g_adc_raw_u = adc_buf[0];
+    g_adc_raw_v = adc_buf[1];
+    g_adc_raw_w = adc_buf[2];
 
-    return v_line;
+    g_meas_u = adc_diff_to_volts(g_adc_raw_u);
+    g_meas_v = adc_diff_to_volts(g_adc_raw_v);
+    g_meas_w = adc_diff_to_volts(g_adc_raw_w);
+}
+
+static void update_sogi(void)
+{
+    SOGI_Output out_u;
+    SOGI_Output out_v;
+    SOGI_Output out_w;
+
+    SOGI_Step(&sogi_u_state, g_meas_u, &out_u);
+    SOGI_Step(&sogi_v_state, g_meas_v, &out_v);
+    SOGI_Step(&sogi_w_state, g_meas_w, &out_w);
+
+    g_sogi_u_alpha = out_u.v_alpha;
+    g_sogi_u_beta  = out_u.v_beta;
+
+    g_sogi_v_alpha = out_v.v_alpha;
+    g_sogi_v_beta  = out_v.v_beta;
+
+    g_sogi_w_alpha = out_w.v_alpha;
+    g_sogi_w_beta  = out_w.v_beta;
+}
+
+/* simple alpha-beta PLL */
+/* simple alpha-beta PLL */
+/* simple alpha-beta PLL */
+static void update_pll(void)
+{
+    float alpha, beta;
+    float cos_th, sin_th;
+    float error_volts;
+    float max_dev_int, max_dev_out;
+
+		/* Clarke transform with V and W swapped (Negative Sequence Fix) */
+		alpha = (2.0f / 3.0f) * (g_meas_u - 0.5f * g_meas_w - 0.5f * g_meas_v);
+		beta  = (2.0f / 3.0f) * (SQRT3_OVER_2 * (g_meas_w - g_meas_v));
+
+    /* 2. Calculate Phase Error using Park Transform equivalent
+     * This completely avoids atan2f() and its dangerous phase-wrap jumps!
+     * Mathematically, this equals: Vpeak * sin(measured_angle - g_pll_theta)
+     */
+    cos_th = cosf(g_pll_theta);
+    sin_th = sinf(g_pll_theta);
+
+    error_volts = (beta * cos_th) - (alpha * sin_th);
+
+    /* 3. Normalize the error so your original Kp and Ki gains work perfectly */
+    g_pll_error = -(error_volts / g_clean_reference_phase_peak_volts);
+
+    /* 4. PI Controller with Anti-Windup */
+    pll_integrator += pll_ki * pll_ts * g_pll_error;
+
+    max_dev_int = TWO_PI_F * 10.0f;  /* Integrator limit: +/- 10 Hz */
+    max_dev_out = TWO_PI_F * 20.0f; /* Total output limit: +/- 20 Hz */
+
+    pll_integrator = clampf(pll_integrator, -max_dev_int, +max_dev_int);
+
+    pll_omega = pll_omega_nominal + (pll_kp * g_pll_error) + pll_integrator;
+    pll_omega = clampf(pll_omega, pll_omega_nominal - max_dev_out, pll_omega_nominal + max_dev_out);
+
+    /* 5. Integrate frequency to get angle */
+    g_pll_theta += pll_omega * pll_ts;
+    g_pll_theta = wrap_0_2pi(g_pll_theta);
+
+    g_pll_freq_hz = pll_omega / TWO_PI_F;
+}
+
+static void build_reference_from_sogi(void)
+{
+    g_ref_u = g_sogi_u_alpha;
+    g_ref_v = g_sogi_v_alpha;
+    g_ref_w = g_sogi_w_alpha;
+}
+
+static void build_reference_from_pll(void)
+{
+    float phase_u_angle;
+
+    /* * Since the PI controller locked at the opposite equilibrium (+90 deg),
+     * subtracting 90 degrees (- PI/2) completely eliminates the 180-degree phase shift 
+     * and perfectly aligns the PLL with the grid.
+     */
+    phase_u_angle = g_pll_theta - (PI_F * 0.5f);  /* Changed from + to - */
+
+    g_ref_u = g_clean_reference_phase_peak_volts * sinf(phase_u_angle);
+    
+    /* * NEGATIVE SEQUENCE FIX FOR REFERENCE GENERATION *
+     * Since the physical grid is U-W-V, we must generate references
+     * with the same sequence. So V gets +120 and W gets -120.
+     */
+    g_ref_v = g_clean_reference_phase_peak_volts * sinf(phase_u_angle + TWO_PI_OVER_3); 
+    g_ref_w = g_clean_reference_phase_peak_volts * sinf(phase_u_angle - TWO_PI_OVER_3); 
+}
+
+static void build_reference(void)
+{
+    if (g_reference_mode == 1)
+    {
+        build_reference_from_pll();
+    }
+    else
+    {
+        build_reference_from_sogi();
+    }
+}
+
+static void build_injection(void)
+{
+    g_err_u = g_ref_u - g_meas_u;
+    g_err_v = g_ref_v - g_meas_v;
+    g_err_w = g_ref_w - g_meas_w;
+
+    /* inverted error */
+    g_inj_u = -g_err_u;   /* = measured - reference */
+    g_inj_v = -g_err_v;
+    g_inj_w = -g_err_w;
+}
+
+static void apply_pwm_output(void)
+{
+    float out_u;
+    float out_v;
+    float out_w;
+    float sign;
+
+    if (g_output_mode == 0)
+    {
+        /* measured voltage */
+        out_u = g_meas_u;
+        out_v = g_meas_v;
+        out_w = g_meas_w;
+        sign = g_direct_output_sign;
+    }
+    else if (g_output_mode == 1)
+    {
+        /* reference voltage */
+        out_u = g_ref_u;
+        out_v = g_ref_v;
+        out_w = g_ref_w;
+        sign = g_direct_output_sign;
+    }
+    else
+    {
+        /* injection voltage */
+        out_u = g_inj_u;
+        out_v = g_inj_v;
+        out_w = g_inj_w;
+        sign = g_injection_output_sign;
+    }
+
+    g_pwm_u = g_pwm_reference_gain * sign * out_u;
+    g_pwm_v = g_pwm_reference_gain * sign * out_v;
+    g_pwm_w = g_pwm_reference_gain * sign * out_w;
+		
+		
+		
+    PWM_3Leg_ApplyPhaseReferences(&g_pwm_3leg,
+                                  g_pwm_u,
+                                  g_pwm_v,
+                                  g_pwm_w,
+                                  &g_pwm_3leg_dbg);
+}
+
+static void control_step(void)
+{
+    read_adc_voltages();
+
+    /* * Keep both algorithms alive all the time to prevent phase jumps 
+     * or zero-starts when switching between reference modes.
+     */
+    update_sogi();
+    update_pll();
+
+    build_reference();
+    build_injection();
+    apply_pwm_output();
 }
 /* USER CODE END 0 */
 
@@ -195,55 +449,59 @@ int main(void)
   MX_TIM6_Init();
   MX_TIM1_Init();
   /* USER CODE BEGIN 2 */
-	//diff mode Calib
-
 	HAL_ADC_Stop(&hadc4);
 	if (HAL_ADCEx_Calibration_Start(&hadc4, ADC_DIFFERENTIAL_ENDED) != HAL_OK)
 	{
 			Error_Handler();
 	}
 
-	//HAL_ADCEx_Calibration_Start(&hadc4, a, ADC_DIFFERENTIAL_ENDED);
+	/* SOGI init */
+	sogi_cfg.Ts = 1.0f / 10000.0f;
+	sogi_cfg.k  = 0.8f;
+	sogi_cfg.w  = TWO_PI_F * 50.0f;
 
-	/* SOGI config (10 kHz sample, 50 Hz) */
-	sogi_cfg.Ts = 1.0f / 10000.0f;               // TIM6 = 10kHz
-	sogi_cfg.k  = 1.4142f;  
-	sogi_cfg.w  = 2.0f * 3.1415926f * 50.0f;
+	SOGI_Init(&sogi_u_state, &sogi_cfg);
+	SOGI_Init(&sogi_v_state, &sogi_cfg);
+	SOGI_Init(&sogi_w_state, &sogi_cfg);
 
-	/* Init three SOGIs */
-	SOGI_Init(&sogi_st_V, &sogi_cfg);
-	SOGI_Init(&sogi_st_W, &sogi_cfg);
-	SOGI_Init(&sogi_st_U, &sogi_cfg);
-	timer_tick = 0;
-	HAL_TIM_Base_Start(&htim6);
+	/* PLL init */
+	g_pll_theta = 0.0f;
+	pll_integrator = 0.0f;
+	pll_omega_nominal = TWO_PI_F * 50.0f;
+	pll_omega = pll_omega_nominal;
 
+	/* default modes */
+	g_reference_mode = 0;   /* SOGI filtered reference */
+	g_output_mode    = 1;   /* output = reference */
 
-	/* DMA length must match Number of Conversions = 3 */
+	/* start ADC DMA */
 	if (HAL_ADC_Start_DMA(&hadc4, (uint32_t*)adc_buf, ADC_BUF_LEN) != HAL_OK)
 	{
 			Error_Handler();
 	}
-	
-		
-	g_pwm_cfg.vdc_volts      = 800.0f;   
-	g_pwm_cfg.k_gain         = -0.22f;     
-	g_pwm_cfg.duty_min       = 0.02f;
-	g_pwm_cfg.duty_max       = 0.98f;
-	g_pwm_cfg.enable_scaling = true;     
-//	
-//	
-//	PWM_SVPWM_Init(&g_pwm, &htim1, &g_pwm_cfg);
-//	HAL_TIM_PWM_Start(&htim1, TIM_CHANNEL_1);
-//	HAL_TIM_PWM_Start(&htim1, TIM_CHANNEL_2);
-//	HAL_TIM_PWM_Start(&htim1, TIM_CHANNEL_3);
-//	HAL_TIM_PWM_Start(&htim1, TIM_CHANNEL_4);
-//	
-//	HAL_TIMEx_PWMN_Start(&htim1, TIM_CHANNEL_1);
-//	HAL_TIMEx_PWMN_Start(&htim1, TIM_CHANNEL_2);
-//	HAL_TIMEx_PWMN_Start(&htim1, TIM_CHANNEL_3);
-//	HAL_TIMEx_PWMN_Start(&htim1, TIM_CHANNEL_4);
 
-	
+	/* PWM config */
+	g_pwm_3leg_cfg.vdc_volts            = 400.0f;
+	g_pwm_3leg_cfg.output_freq_hz       = 50.0f;
+	g_pwm_3leg_cfg.pwm_update_hz        = 10000.0f;
+	g_pwm_3leg_cfg.modulation_index     = 1.0f;
+	g_pwm_3leg_cfg.duty_min             = 0.02f;
+	g_pwm_3leg_cfg.duty_max             = 0.98f;
+	g_pwm_3leg_cfg.enable_zero_sequence = true;
+
+	PWM_3Leg_Init(&g_pwm_3leg, &htim1, &g_pwm_3leg_cfg);
+
+	/* start PWM */
+	HAL_TIM_PWM_Start(&htim1, TIM_CHANNEL_1);
+	HAL_TIM_PWM_Start(&htim1, TIM_CHANNEL_2);
+	HAL_TIM_PWM_Start(&htim1, TIM_CHANNEL_3);
+
+	HAL_TIMEx_PWMN_Start(&htim1, TIM_CHANNEL_1);
+	HAL_TIMEx_PWMN_Start(&htim1, TIM_CHANNEL_2);
+	HAL_TIMEx_PWMN_Start(&htim1, TIM_CHANNEL_3);
+
+	/* TIM6 only triggers ADC */
+	HAL_TIM_Base_Start(&htim6);
 
   /* USER CODE END 2 */
 
@@ -253,23 +511,7 @@ int main(void)
   {
 		
     
-		SOGI_3PhaseOut o = SOGI_GetLast3();
 
-		 Vu_inst = o.U.v_in;
-		 Vv_inst = o.V.v_in;
-		 Vw_inst = o.W.v_in;
-		
-		 Vu_filt = o.U.v_alpha;
-		 Vv_filt = o.V.v_alpha;
-		 Vw_filt = o.W.v_alpha;
-		
-		
-			U_error_ref_grid = (Vu_filt - Vu_inst);
-			V_error_ref_grid = (Vv_filt - Vv_inst);
-			W_error_ref_grid = (Vw_filt - Vw_inst);
-	
-
-		//	PWM_SVPWM_ApplyFromError(&g_pwm, U_error_ref_grid, V_error_ref_grid, W_error_ref_grid, &g_pwm_dbg);
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
@@ -324,75 +566,13 @@ void SystemClock_Config(void)
 }
 
 /* USER CODE BEGIN 4 */
-
 void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef* hadc)
 {
-	
-		HAL_GPIO_TogglePin(GPIOC,GPIO_PIN_12);
-	
     if (hadc->Instance == ADC4)
-    {		timer_tick_2 = HAL_GetTick() - timer_tick;
-			   timer_tick = HAL_GetTick();
-        /* DMA order = rank order */
-				int16_t raw_U = adc_buf[0];
-				int16_t raw_V = adc_buf[1];
-				int16_t raw_W = adc_buf[2];
-
-        g_adc_raw_V = raw_V;
-        g_adc_raw_W = raw_W;
-        g_adc_raw_U = raw_U;
-
-        /* Convert to volts (at ADC pins, differential) */
-        float v_in_V = adc_diff_to_volts(raw_V);
-        float v_in_W = adc_diff_to_volts(raw_W);
-        float v_in_U = adc_diff_to_volts(raw_U);
-
-        g_v_in_V = v_in_V;
-        g_v_in_W = v_in_W;
-        g_v_in_U = v_in_U;
-
-        /* Run 3 independent SOGIs */
-
-        SOGI_Output y;
-
-        SOGI_Step(&sogi_st_V, v_in_V, &y);
-        g_v_alpha_V = y.v_alpha;  g_v_beta_V = y.v_beta;  g_e_V = y.e;
-
-        SOGI_Step(&sogi_st_W, v_in_W, &y);
-        g_v_alpha_W = y.v_alpha;  g_v_beta_W = y.v_beta;  g_e_W = y.e;
-
-        SOGI_Step(&sogi_st_U, v_in_U, &y);
-        g_v_alpha_U = y.v_alpha;  g_v_beta_U = y.v_beta;  g_e_U = y.e;
+    {
+        control_step();
     }
 }
-
-static SOGI_3PhaseOut SOGI_GetLast3(void)
-{
-    SOGI_3PhaseOut out;
-
-    __disable_irq();
-
-    out.V.v_in    = g_v_in_V;
-    out.V.v_alpha = g_v_alpha_V;
-    out.V.v_beta  = g_v_beta_V;
-    out.V.e       = g_e_V;
-
-    out.W.v_in    = g_v_in_W;
-    out.W.v_alpha = g_v_alpha_W;
-    out.W.v_beta  = g_v_beta_W;
-    out.W.e       = g_e_W;
-
-    out.U.v_in    = g_v_in_U;
-    out.U.v_alpha = g_v_alpha_U;
-    out.U.v_beta  = g_v_beta_U;
-    out.U.e       = g_e_U;
-
-    __enable_irq();
-
-    return out;
-}
-
-
 /* USER CODE END 4 */
 
 /**

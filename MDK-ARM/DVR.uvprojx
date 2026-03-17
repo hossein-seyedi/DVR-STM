@@ -569,6 +569,16 @@
               <FileType>5</FileType>
               <FilePath>..\LIB\pwm_svpwm.h</FilePath>
             </File>
+            <File>
+              <FileName>pwm_3leg_sine.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\LIB\pwm_3leg_sine.c</FilePath>
+            </File>
+            <File>
+              <FileName>pwm_3leg_sine.h</FileName>
+              <FileType>5</FileType>
+              <FilePath>..\LIB\pwm_3leg_sine.h</FilePath>
+            </File>
           </Files>
         </Group>
         <Group>
