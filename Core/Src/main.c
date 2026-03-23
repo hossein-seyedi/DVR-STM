@@ -93,7 +93,10 @@ static PWM_3Leg_Handle g_pwm_3leg;
 static PWM_3Leg_Config g_pwm_3leg_cfg;
 static PWM_3Leg_Debug  g_pwm_3leg_dbg;
 
+#define Version "0.0.1"
+
 #define ADC_BUF_LEN 3
+
 volatile uint16_t adc_buf[ADC_BUF_LEN];
 
 /* =========================
@@ -165,7 +168,7 @@ static SOGI_State  sogi_v_state;
 static SOGI_State  sogi_w_state;
 
 /* simple PLL internal variables */
-static float pll_ts = 0.0001f;         /* 10 kHz */
+static float pll_ts = 0.00005f;         /* 10 kHz */
 static float pll_kp = 80.0f;
 static float pll_ki = 2000.0f;
 static float pll_integrator = 0.0f;
@@ -456,7 +459,7 @@ int main(void)
 	}
 
 	/* SOGI init */
-	sogi_cfg.Ts = 1.0f / 10000.0f;
+	sogi_cfg.Ts = 1.0f / 20000.0f;
 	sogi_cfg.k  = 0.8f;
 	sogi_cfg.w  = TWO_PI_F * 50.0f;
 
@@ -483,7 +486,7 @@ int main(void)
 	/* PWM config */
 	g_pwm_3leg_cfg.vdc_volts            = 400.0f;
 	g_pwm_3leg_cfg.output_freq_hz       = 50.0f;
-	g_pwm_3leg_cfg.pwm_update_hz        = 10000.0f;
+	g_pwm_3leg_cfg.pwm_update_hz        = 20000.0f;
 	g_pwm_3leg_cfg.modulation_index     = 1.0f;
 	g_pwm_3leg_cfg.duty_min             = 0.02f;
 	g_pwm_3leg_cfg.duty_max             = 0.98f;
