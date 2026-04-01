@@ -93,7 +93,7 @@ static PWM_3Leg_Handle g_pwm_3leg;
 static PWM_3Leg_Config g_pwm_3leg_cfg;
 static PWM_3Leg_Debug  g_pwm_3leg_dbg;
 
-#define Version "0.0.1"
+#define Version "0.0.2"
 
 #define ADC_BUF_LEN 3
 
@@ -117,7 +117,7 @@ volatile int g_output_mode    = 1;
 
 /* user settings */
 volatile float g_clean_reference_phase_peak_volts = 325.0f;
-volatile float g_pwm_reference_gain = 0.20f;
+volatile float g_pwm_reference_gain = 1.0f;
 
 /* raw ADC */
 volatile uint16_t g_adc_raw_u = 0;
@@ -128,6 +128,8 @@ volatile uint16_t g_adc_raw_w = 0;
 volatile float g_meas_u = 0.0f;
 volatile float g_meas_v = 0.0f;
 volatile float g_meas_w = 0.0f;
+/*the transformer ratio ----------------------------------*/
+float Transformer_Ratio = 9.58;
 
 /* SOGI outputs */
 volatile float g_sogi_u_alpha = 0.0f;
@@ -273,7 +275,7 @@ static void update_pll(void)
     float max_dev_int, max_dev_out;
 
 		/* Clarke transform with V and W swapped (Negative Sequence Fix) */
-		alpha = (2.0f / 3.0f) * (g_meas_u - 0.5f * g_meas_w - 0.5f * g_meas_v);
+		alpha = (2.0f / 3.0f) * (g_sogi_u_alpha - 0.5f * g_sogi_w_alpha - 0.5f * g_sogi_v_alpha);
 		beta  = (2.0f / 3.0f) * (SQRT3_OVER_2 * (g_meas_w - g_meas_v));
 
     /* 2. Calculate Phase Error using Park Transform equivalent
@@ -389,9 +391,9 @@ static void apply_pwm_output(void)
         sign = g_injection_output_sign;
     }
 
-    g_pwm_u = g_pwm_reference_gain * sign * out_u;
-    g_pwm_v = g_pwm_reference_gain * sign * out_v;
-    g_pwm_w = g_pwm_reference_gain * sign * out_w;
+    g_pwm_u = g_pwm_reference_gain * sign * out_u * Transformer_Ratio;
+    g_pwm_v = g_pwm_reference_gain * sign * out_v * Transformer_Ratio;
+    g_pwm_w = g_pwm_reference_gain * sign * out_w * Transformer_Ratio;
 		
 		
 		
@@ -474,8 +476,8 @@ int main(void)
 	pll_omega = pll_omega_nominal;
 
 	/* default modes */
-	g_reference_mode = 0;   /* SOGI filtered reference */
-	g_output_mode    = 1;   /* output = reference */
+	g_reference_mode = 1;   /* SOGI filtered reference */
+	g_output_mode    = 2;   /* output = reference */
 
 	/* start ADC DMA */
 	if (HAL_ADC_Start_DMA(&hadc4, (uint32_t*)adc_buf, ADC_BUF_LEN) != HAL_OK)

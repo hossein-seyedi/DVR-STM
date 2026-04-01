@@ -3,7 +3,7 @@
 <title>Static Call Graph - [DVR\DVR.axf]</title></head>
 <body><HR>
 <H1>Static Call Graph for image DVR\DVR.axf</H1><HR>
-<BR><P>#&#060CALLGRAPH&#062# ARM Linker, 6240002: Last Updated: Mon Mar 23 13:10:45 2026
+<BR><P>#&#060CALLGRAPH&#062# ARM Linker, 6240002: Last Updated: Wed Apr  1 14:27:57 2026
 <BR><P>
 <H3>Maximum Stack Usage =        396 bytes + Unknown(Functions without stacksize, Cycles, Untraceable Function Pointers)</H3><H3>
 Call chain for Maximum Stack Depth:</H3>
@@ -1378,7 +1378,7 @@ Global Symbols
 <P><STRONG><a name="[5]"></a>UsageFault_Handler</STRONG> (Thumb, 4 bytes, Stack size 0 bytes, stm32g4xx_it.o(.text.UsageFault_Handler))
 <BR>[Address Reference Count : 1]<UL><LI> startup_stm32g484xx.o(RESET)
 </UL>
-<P><STRONG><a name="[80]"></a>main</STRONG> (Thumb, 412 bytes, Stack size 48 bytes, main.o(.text.main))
+<P><STRONG><a name="[80]"></a>main</STRONG> (Thumb, 414 bytes, Stack size 48 bytes, main.o(.text.main))
 <BR><BR>[Stack]<UL><LI>Max Depth = 396 + Unknown Stack Size
 <LI>Call Chain = main &rArr; MX_ADC4_Init &rArr; HAL_ADC_ConfigChannel &rArr; LL_ADC_SetOffset
 </UL>
@@ -1492,7 +1492,7 @@ Local Symbols
 <BR>[Called By]<UL><LI><a href="#[ac]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;control_step
 </UL>
 
-<P><STRONG><a name="[10f]"></a>update_pll</STRONG> (Thumb, 472 bytes, Stack size 56 bytes, main.o(.text.update_pll))
+<P><STRONG><a name="[10f]"></a>update_pll</STRONG> (Thumb, 488 bytes, Stack size 56 bytes, main.o(.text.update_pll))
 <BR><BR>[Stack]<UL><LI>Max Depth = 92<LI>Call Chain = update_pll &rArr; __hardfp_sinf &rArr; __mathlib_rredf2
 </UL>
 <BR>[Calls]<UL><LI><a href="#[116]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;wrap_0_2pi
@@ -1516,7 +1516,7 @@ Local Symbols
 <BR><BR>[Called By]<UL><LI><a href="#[ac]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;control_step
 </UL>
 
-<P><STRONG><a name="[108]"></a>apply_pwm_output</STRONG> (Thumb, 326 bytes, Stack size 24 bytes, main.o(.text.apply_pwm_output))
+<P><STRONG><a name="[108]"></a>apply_pwm_output</STRONG> (Thumb, 358 bytes, Stack size 24 bytes, main.o(.text.apply_pwm_output))
 <BR><BR>[Stack]<UL><LI>Max Depth = 196<LI>Call Chain = apply_pwm_output &rArr; PWM_3Leg_ApplyPhaseReferences &rArr; minmax3
 </UL>
 <BR>[Calls]<UL><LI><a href="#[fe]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;PWM_3Leg_ApplyPhaseReferences
