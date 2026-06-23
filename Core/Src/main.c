@@ -30,6 +30,8 @@
 #include <math.h>
 #include "sogi.h"
 #include "pwm_3leg_sine.h"
+#include "dynvolt_lpf.h"
+#include "dynvolt_predictor.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -55,9 +57,10 @@ typedef enum
 
 typedef enum
 {
-    PWM_MODE_MEASURED_DIRECT      = 0, /* output = measured voltage */
-    PWM_MODE_REFERENCE_DIRECT     = 1, /* output = reference voltage */
-    PWM_MODE_INJECTION_NEG_ERROR  = 2  /* output = measured - reference */
+    PWM_MODE_MEASURED_DIRECT       = 0, /* output = measured voltage */
+    PWM_MODE_REFERENCE_DIRECT      = 1, /* output = reference voltage */
+    PWM_MODE_INJECTION_DIRECT      = 2, /* output = direct series injection */
+    PWM_MODE_INJECTION_PREDICTOR   = 3  /* output = predictor-based series injection */
 } PwmMode_t;
 
 typedef struct
@@ -93,7 +96,14 @@ static PWM_3Leg_Handle g_pwm_3leg;
 static PWM_3Leg_Config g_pwm_3leg_cfg;
 static PWM_3Leg_Debug  g_pwm_3leg_dbg;
 
-#define Version "0.0.2"
+static DynVolt_LPF3P_F32 g_predictor_error_lpf;
+static DynVoltPredictor3P g_predictor;
+static DynVoltPredictor3P_Config g_predictor_cfg;
+
+#define Version "0.0.3"
+#define PREDICTOR_RATE_HZ        500.0f
+#define PREDICTOR_TS_SEC         (1.0f / PREDICTOR_RATE_HZ)
+#define PREDICTOR_PERIOD_US      2000.0f
 
 #define ADC_BUF_LEN 3
 
@@ -110,10 +120,12 @@ volatile uint16_t adc_buf[ADC_BUF_LEN];
    g_output_mode:
    0 = PWM output = measured voltage
    1 = PWM output = reference voltage
-   2 = PWM output = injection voltage = measured - reference
+   2 = PWM output = direct injection voltage
+   3 = PWM output = predictor injection voltage
 */
 volatile int g_reference_mode = 0;
 volatile int g_output_mode    = 1;
+static int g_last_output_mode = -1;
 
 /* user settings */
 volatile float g_clean_reference_phase_peak_volts = 325.0f;
@@ -128,6 +140,13 @@ volatile uint16_t g_adc_raw_w = 0;
 volatile float g_meas_u = 0.0f;
 volatile float g_meas_v = 0.0f;
 volatile float g_meas_w = 0.0f;
+
+/* filtered error used only as predictor input */
+volatile float g_pred_input_err_filt_u = 0.0f;
+volatile float g_pred_input_err_filt_v = 0.0f;
+volatile float g_pred_input_err_filt_w = 0.0f;
+volatile uint8_t g_predictor_error_filter_primed = 0u;
+
 /*the transformer ratio ----------------------------------*/
 float Transformer_Ratio = 9.58;
 
@@ -158,6 +177,24 @@ volatile float g_inj_u = 0.0f;
 volatile float g_inj_v = 0.0f;
 volatile float g_inj_w = 0.0f;
 
+/* predictor input, prediction and injection */
+volatile float g_pred_input_err_u = 0.0f;
+volatile float g_pred_input_err_v = 0.0f;
+volatile float g_pred_input_err_w = 0.0f;
+
+volatile float g_pred_err_u = 0.0f;
+volatile float g_pred_err_v = 0.0f;
+volatile float g_pred_err_w = 0.0f;
+
+volatile float g_pred_inj_u = 0.0f;
+volatile float g_pred_inj_v = 0.0f;
+volatile float g_pred_inj_w = 0.0f;
+
+volatile float g_predictor_flicker_score = 0.0f;
+volatile float g_predictor_alpha = 0.0f;
+volatile uint8_t g_predictor_active = 0u;
+volatile uint8_t g_predictor_saturated = 0u;
+
 /* final PWM command */
 volatile float g_pwm_u = 0.0f;
 volatile float g_pwm_v = 0.0f;
@@ -179,6 +216,23 @@ static float pll_omega_nominal = 2.0f * 3.1415926f * 50.0f;
 
 volatile float g_direct_output_sign = 1.0f;
 volatile float g_injection_output_sign = -1.0f;
+
+volatile uint32_t g_control_cycles = 0u;
+volatile uint32_t g_control_cycles_max = 0u;
+volatile float g_control_time_us = 0.0f;
+volatile uint8_t g_control_timing_overrun = 0u;
+
+
+
+volatile uint8_t g_predictor_run_request = 0u;
+volatile uint8_t g_predictor_is_running = 0u;
+volatile uint32_t g_predictor_tick_count = 0u;
+volatile uint32_t g_predictor_missed_count = 0u;
+
+volatile uint32_t g_predictor_cycles = 0u;
+volatile uint32_t g_predictor_cycles_max = 0u;
+volatile float g_predictor_time_us = 0.0f;
+volatile uint8_t g_predictor_timing_overrun = 0u;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -198,6 +252,9 @@ void SystemClock_Config(void);
 #define ADC_MAX_VALUE   4095.0f
 #define AMC_GAIN        0.4f
 #define RESISTOR_RATIO  100.6f
+
+
+
 
 static float clampf(float x, float min_val, float max_val)
 {
@@ -242,6 +299,25 @@ static void read_adc_voltages(void)
     g_meas_u = adc_diff_to_volts(g_adc_raw_u);
     g_meas_v = adc_diff_to_volts(g_adc_raw_v);
     g_meas_w = adc_diff_to_volts(g_adc_raw_w);
+}
+
+static void filter_predictor_input_error(void)
+{
+    const float alpha = 0.6341f;
+
+    if (g_predictor_error_filter_primed == 0u)
+    {
+        g_pred_input_err_filt_u = g_pred_input_err_u;
+        g_pred_input_err_filt_v = g_pred_input_err_v;
+        g_pred_input_err_filt_w = g_pred_input_err_w;
+
+        g_predictor_error_filter_primed = 1u;
+        return;
+    }
+
+    g_pred_input_err_filt_u += alpha * (g_pred_input_err_u - g_pred_input_err_filt_u);
+    g_pred_input_err_filt_v += alpha * (g_pred_input_err_v - g_pred_input_err_filt_v);
+    g_pred_input_err_filt_w += alpha * (g_pred_input_err_w - g_pred_input_err_filt_w);
 }
 
 static void update_sogi(void)
@@ -335,28 +411,70 @@ static void build_reference_from_pll(void)
     g_ref_w = g_clean_reference_phase_peak_volts * sinf(phase_u_angle - TWO_PI_OVER_3); 
 }
 
-static void build_reference(void)
-{
-    if (g_reference_mode == 1)
-    {
-        build_reference_from_pll();
-    }
-    else
-    {
-        build_reference_from_sogi();
-    }
-}
-
-static void build_injection(void)
+static void build_error(void)
 {
     g_err_u = g_ref_u - g_meas_u;
     g_err_v = g_ref_v - g_meas_v;
     g_err_w = g_ref_w - g_meas_w;
+}
 
-    /* inverted error */
+static void build_injection(void)
+{
+    /* direct inverted error */
     g_inj_u = -g_err_u;   /* = measured - reference */
     g_inj_v = -g_err_v;
     g_inj_w = -g_err_w;
+}
+
+static void build_predictor_injection(void)
+{
+    const DynVoltPredictor3P_Debug *pred_dbg;
+    float pred_err_u;
+    float pred_err_v;
+    float pred_err_w;
+
+    /*
+     * Important:
+     * The predictor input is the voltage error, not the measured voltage.
+     * First build the raw error: e = reference - measured.
+     * Then filter this error and feed the filtered error to the predictor.
+     * This avoids creating an artificial 50 Hz error caused by filtering only
+     * the measured voltage while keeping the reference unfiltered.
+     */
+		__disable_irq();
+		g_pred_input_err_u = g_err_u;
+		g_pred_input_err_v = g_err_v;
+		g_pred_input_err_w = g_err_w;
+		__enable_irq();
+
+    filter_predictor_input_error();
+
+    DynVoltPredictor3P_Step(&g_predictor,
+                            g_pred_input_err_filt_u,
+                            g_pred_input_err_filt_v,
+                            g_pred_input_err_filt_w,
+                            &pred_err_u,
+                            &pred_err_v,
+                            &pred_err_w);
+
+    g_pred_err_u = pred_err_u;
+    g_pred_err_v = pred_err_v;
+    g_pred_err_w = pred_err_w;
+
+    /* Use the same injection polarity convention as direct injection. */
+    g_pred_inj_u = -g_pred_err_u;
+    g_pred_inj_v = -g_pred_err_v;
+    g_pred_inj_w = -g_pred_err_w;
+
+    pred_dbg = DynVoltPredictor3P_GetDebug(&g_predictor);
+
+    if (pred_dbg != 0)
+    {
+        g_predictor_flicker_score = pred_dbg->flicker_score;
+        g_predictor_alpha = pred_dbg->alpha_pred;
+        g_predictor_active = pred_dbg->active;
+        g_predictor_saturated = pred_dbg->saturated;
+    }
 }
 
 static void apply_pwm_output(void)
@@ -366,7 +484,7 @@ static void apply_pwm_output(void)
     float out_w;
     float sign;
 
-    if (g_output_mode == 0)
+    if (g_output_mode == PWM_MODE_MEASURED_DIRECT)
     {
         /* measured voltage */
         out_u = g_meas_u;
@@ -374,7 +492,7 @@ static void apply_pwm_output(void)
         out_w = g_meas_w;
         sign = g_direct_output_sign;
     }
-    else if (g_output_mode == 1)
+    else if (g_output_mode == PWM_MODE_REFERENCE_DIRECT)
     {
         /* reference voltage */
         out_u = g_ref_u;
@@ -382,9 +500,17 @@ static void apply_pwm_output(void)
         out_w = g_ref_w;
         sign = g_direct_output_sign;
     }
+    else if (g_output_mode == PWM_MODE_INJECTION_PREDICTOR)
+    {
+        /* predictor-based series injection */
+        out_u = g_pred_inj_u;
+        out_v = g_pred_inj_v;
+        out_w = g_pred_inj_w;
+        sign = g_injection_output_sign;
+    }
     else
     {
-        /* injection voltage */
+        /* direct series injection */
         out_u = g_inj_u;
         out_v = g_inj_v;
         out_w = g_inj_w;
@@ -404,20 +530,70 @@ static void apply_pwm_output(void)
                                   &g_pwm_3leg_dbg);
 }
 
+static void update_selected_reference(void)
+{
+    update_sogi();
+
+    if (g_reference_mode == REF_MODE_PLL_CLEAN)
+    {
+        update_pll();
+        build_reference_from_pll();
+    }
+    else
+    {
+        build_reference_from_sogi();
+    }
+}
+
+
+static void dwt_init(void)
+{
+    CoreDebug->DEMCR |= CoreDebug_DEMCR_TRCENA_Msk;
+    DWT->CYCCNT = 0u;
+    DWT->CTRL |= DWT_CTRL_CYCCNTENA_Msk;
+}
+
+static void predictor_monitor_step(void)
+{
+    uint32_t start_cycles;
+    uint32_t end_cycles;
+    uint32_t elapsed_cycles;
+
+    g_predictor_is_running = 1u;
+
+    start_cycles = DWT->CYCCNT;
+
+    build_predictor_injection();
+
+    end_cycles = DWT->CYCCNT;
+    elapsed_cycles = end_cycles - start_cycles;
+
+    g_predictor_cycles = elapsed_cycles;
+
+    if (elapsed_cycles > g_predictor_cycles_max)
+    {
+        g_predictor_cycles_max = elapsed_cycles;
+    }
+
+    g_predictor_time_us = ((float)elapsed_cycles) / 170.0f;
+
+    if (g_predictor_time_us > 1500.0f)
+    {
+        g_predictor_timing_overrun = 1u;
+    }
+
+    g_predictor_is_running = 0u;
+}
+
 static void control_step(void)
 {
     read_adc_voltages();
 
-    /* * Keep both algorithms alive all the time to prevent phase jumps 
-     * or zero-starts when switching between reference modes.
-     */
-    update_sogi();
-    update_pll();
+    update_selected_reference();
 
-    build_reference();
-    build_injection();
-    apply_pwm_output();
+    build_error();
 }
+
 /* USER CODE END 0 */
 
 /**
@@ -444,7 +620,7 @@ int main(void)
   SystemClock_Config();
 
   /* USER CODE BEGIN SysInit */
-
+dwt_init();
   /* USER CODE END SysInit */
 
   /* Initialize all configured peripherals */
@@ -453,6 +629,7 @@ int main(void)
   MX_ADC4_Init();
   MX_TIM6_Init();
   MX_TIM1_Init();
+  MX_TIM7_Init();
   /* USER CODE BEGIN 2 */
 	HAL_ADC_Stop(&hadc4);
 	if (HAL_ADCEx_Calibration_Start(&hadc4, ADC_DIFFERENTIAL_ENDED) != HAL_OK)
@@ -469,6 +646,19 @@ int main(void)
 	SOGI_Init(&sogi_v_state, &sogi_cfg);
 	SOGI_Init(&sogi_w_state, &sogi_cfg);
 
+	/* LPF init for predictor input error */
+	DynVolt_LPF3P_Init(&g_predictor_error_lpf, DYNVOLT_LPF_PROFILE_80HZ_20KHZ);
+	g_predictor_error_filter_primed = 0u;
+
+	/* Predictor init */
+	DynVoltPredictor3P_GetDefaultConfig(&g_predictor_cfg);
+	g_predictor_cfg.ts_sec = PREDICTOR_TS_SEC;
+	g_predictor_cfg.td_sec = 1.0e-3f;
+	g_predictor_cfg.vmax_volts = 80.0f;
+	g_predictor_cfg.enable_predictor = 1u;
+	g_predictor_cfg.enable_adaptation = 1u;
+	DynVoltPredictor3P_Init(&g_predictor, &g_predictor_cfg);
+
 	/* PLL init */
 	g_pll_theta = 0.0f;
 	pll_integrator = 0.0f;
@@ -476,8 +666,8 @@ int main(void)
 	pll_omega = pll_omega_nominal;
 
 	/* default modes */
-	g_reference_mode = 1;   /* SOGI filtered reference */
-	g_output_mode    = 2;   /* output = reference */
+	g_reference_mode = REF_MODE_PLL_CLEAN;
+	g_output_mode    = PWM_MODE_INJECTION_PREDICTOR;
 
 	/* start ADC DMA */
 	if (HAL_ADC_Start_DMA(&hadc4, (uint32_t*)adc_buf, ADC_BUF_LEN) != HAL_OK)
@@ -496,25 +686,35 @@ int main(void)
 
 	PWM_3Leg_Init(&g_pwm_3leg, &htim1, &g_pwm_3leg_cfg);
 
-	/* start PWM */
-	HAL_TIM_PWM_Start(&htim1, TIM_CHANNEL_1);
-	HAL_TIM_PWM_Start(&htim1, TIM_CHANNEL_2);
-	HAL_TIM_PWM_Start(&htim1, TIM_CHANNEL_3);
+//	/* start PWM */
+//	HAL_TIM_PWM_Start(&htim1, TIM_CHANNEL_1);
+//	HAL_TIM_PWM_Start(&htim1, TIM_CHANNEL_2);
+//	HAL_TIM_PWM_Start(&htim1, TIM_CHANNEL_3);
 
-	HAL_TIMEx_PWMN_Start(&htim1, TIM_CHANNEL_1);
-	HAL_TIMEx_PWMN_Start(&htim1, TIM_CHANNEL_2);
-	HAL_TIMEx_PWMN_Start(&htim1, TIM_CHANNEL_3);
+//	HAL_TIMEx_PWMN_Start(&htim1, TIM_CHANNEL_1);
+//	HAL_TIMEx_PWMN_Start(&htim1, TIM_CHANNEL_2);
+//	HAL_TIMEx_PWMN_Start(&htim1, TIM_CHANNEL_3);
 
 	/* TIM6 only triggers ADC */
 	HAL_TIM_Base_Start(&htim6);
-
+	if (HAL_TIM_Base_Start_IT(&htim7) != HAL_OK)
+	{
+			Error_Handler();
+	}
   /* USER CODE END 2 */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
   while (1)
   {
-		
+		    if (g_predictor_run_request != 0u)
+    {
+        __disable_irq();
+        g_predictor_run_request = 0u;
+        __enable_irq();
+
+        predictor_monitor_step();
+    }
     
 
     /* USER CODE END WHILE */
@@ -576,6 +776,23 @@ void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef* hadc)
     if (hadc->Instance == ADC4)
     {
         control_step();
+    }
+}
+
+void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
+{
+    if (htim->Instance == TIM7)
+    {
+        g_predictor_tick_count++;
+
+        if (g_predictor_run_request == 0u)
+        {
+            g_predictor_run_request = 1u;
+        }
+        else
+        {
+            g_predictor_missed_count++;
+        }
     }
 }
 /* USER CODE END 4 */
