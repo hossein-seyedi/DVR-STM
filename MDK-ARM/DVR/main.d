@@ -37,4 +37,4 @@ dvr/main.o: ..\Core\Src\main.c ..\Core\Inc\main.h \
   ..\Core\Inc\tim.h ..\Core\Inc\gpio.h \
   C:\Keil_v5\ARM\ARMCLANG\Bin\..\include\stdbool.h \
   C:\Keil_v5\ARM\ARMCLANG\Bin\..\include\math.h ..\LIB\sogi.h \
-  ..\LIB\pwm_3leg_sine.h ..\LIB\dynvolt_lpf.h ..\LIB\dynvolt_predictor.h
+  ..\LIB\pwm_3leg_sine.h ..\LIB\dynvolt_predictor.h
