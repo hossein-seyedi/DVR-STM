@@ -80,9 +80,9 @@ typedef enum
 #define CONTROL_TS_US                   (1000000.0f / CONTROL_RATE_HZ)
 #define CONTROL_OVERRUN_LIMIT_US        45.0f
 
-#define PREDICTOR_RATE_HZ               500.0f
+#define PREDICTOR_RATE_HZ               2000.0f
 #define PREDICTOR_TS_SEC                (1.0f / PREDICTOR_RATE_HZ)
-#define PREDICTOR_OVERRUN_LIMIT_US      1500.0f
+#define PREDICTOR_OVERRUN_LIMIT_US      350.0f
 
 #define ERROR_DELAY_MS_DEFAULT          0.30f
 #define ERROR_DELAY_BUFFER_LEN          2000u
@@ -964,8 +964,8 @@ int main(void)
   SystemClock_Config();
 
   /* USER CODE BEGIN SysInit */
-dwt_init();
-/* USER CODE END SysInit */
+  dwt_init();
+  /* USER CODE END SysInit */
 
   /* Initialize all configured peripherals */
   MX_GPIO_Init();
@@ -975,20 +975,21 @@ dwt_init();
   MX_TIM1_Init();
   MX_TIM7_Init();
   /* USER CODE BEGIN 2 */
-dvr_application_init();
-g_error_delay_ms_request = 4.5f;
-/* USER CODE END 2 */
+	dvr_application_init();
+	g_error_delay_ms_request = 0.8f;
+	service_error_delay_request();
+  /* USER CODE END 2 */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
   while (1)
   {
     dvr_background_step();
-/* USER CODE END WHILE */
+    /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
   }
-/* USER CODE END 3 */
+  /* USER CODE END 3 */
 }
 
 /**

@@ -7,8 +7,32 @@
 extern "C" {
 #endif
 
+/*
+ * DynVolt 3-phase predictor - one-phase narrow-bank implementation.
+ *
+ * The public API is kept compatible with the previous DynVoltPredictor3P module.
+ * Internally, only phase U is estimated by a narrow frequency-bank RLS/Kalman
+ * predictor. The V and W predicted errors are reconstructed from the same
+ * estimated harmonic coefficients using the configured three-phase sequence.
+ *
+ * Output convention:
+ *   DynVoltPredictor3P_Step() returns predicted voltage errors, not injection
+ *   voltages. The main program must keep using:
+ *       g_pred_inj_x = -g_pred_err_x;
+ */
+
 #define DYNVOLT_PRED_PHASE_COUNT      3u
-#define DYNVOLT_PRED_FREQ_COUNT       51u
+
+/* Narrow bank for the known grid-simulator flicker:
+ *   half period = 0.0568 s
+ *   flicker frequency = 1/(2*0.0568) = 8.8028169 Hz
+ *
+ * The bank is built around:
+ *   50 Hz
+ *   50 +/- flicker frequency, with fine offsets
+ *   50 +/- 3*flicker frequency
+ */
+#define DYNVOLT_PRED_FREQ_COUNT       13u
 #define DYNVOLT_PRED_STATE_COUNT      ((2u * DYNVOLT_PRED_FREQ_COUNT) + 1u)
 #define DYNVOLT_PRED_DELAY_BUF_LEN    128u
 
@@ -17,6 +41,7 @@ typedef struct
     float ts_sec;
     float td_sec;
 
+    /* Kept for backward compatibility with the older wide-bank version. */
     float f_start_hz;
     float df_hz;
 
@@ -29,6 +54,19 @@ typedef struct
 
     uint8_t enable_predictor;
     uint8_t enable_adaptation;
+
+    /* New fields for the one-phase narrow-bank version. */
+    float grid_hz;
+    float flicker_hz;
+    float fine_df_hz;
+
+    /* Phase shifts used for reconstructing V and W from U.
+     * Default matches the user's working U-W-V correction:
+     *   V = U + 120 deg
+     *   W = U - 120 deg
+     */
+    float phase_v_shift_rad;
+    float phase_w_shift_rad;
 
 } DynVoltPredictor3P_Config;
 
@@ -70,8 +108,11 @@ typedef struct
 {
     DynVoltPredictor3P_Config cfg;
 
-    float x[DYNVOLT_PRED_PHASE_COUNT][DYNVOLT_PRED_STATE_COUNT];
-    float p[DYNVOLT_PRED_PHASE_COUNT][DYNVOLT_PRED_STATE_COUNT];
+    /* Single-phase diagonal RLS/Kalman state for phase U only. */
+    float x[DYNVOLT_PRED_STATE_COUNT];
+    float p[DYNVOLT_PRED_STATE_COUNT];
+
+    float freq_hz[DYNVOLT_PRED_FREQ_COUNT];
 
     float osc_cos[DYNVOLT_PRED_FREQ_COUNT];
     float osc_sin[DYNVOLT_PRED_FREQ_COUNT];
@@ -82,19 +123,15 @@ typedef struct
     float fut_cos[DYNVOLT_PRED_FREQ_COUNT];
     float fut_sin[DYNVOLT_PRED_FREQ_COUNT];
 
-    float basis_now[DYNVOLT_PRED_STATE_COUNT];
-    float basis_fut[DYNVOLT_PRED_STATE_COUNT];
-    float p_work[DYNVOLT_PRED_STATE_COUNT];
+    float phase_v_cos;
+    float phase_v_sin;
+    float phase_w_cos;
+    float phase_w_sin;
 
-    float r_filt[DYNVOLT_PRED_PHASE_COUNT];
-    float dr_filt[DYNVOLT_PRED_PHASE_COUNT];
+    float e_prev_u;
+    float de_filt_u;
 
-    float e_prev[DYNVOLT_PRED_PHASE_COUNT];
-    float de_filt[DYNVOLT_PRED_PHASE_COUNT];
-
-    float pred_buf[DYNVOLT_PRED_PHASE_COUNT][DYNVOLT_PRED_DELAY_BUF_LEN];
-    float kal_buf[DYNVOLT_PRED_PHASE_COUNT][DYNVOLT_PRED_DELAY_BUF_LEN];
-    float res_buf[DYNVOLT_PRED_PHASE_COUNT][DYNVOLT_PRED_DELAY_BUF_LEN];
+    float pred_buf_u[DYNVOLT_PRED_DELAY_BUF_LEN];
     uint8_t sat_buf[DYNVOLT_PRED_DELAY_BUF_LEN];
 
     uint16_t buf_index;
@@ -113,8 +150,6 @@ typedef struct
     float e_rms_env;
     float e_max_env;
     float de_rms_env;
-    float de_max_env;
-
     float flicker_score;
     float alpha_pred_state;
 
@@ -148,4 +183,4 @@ const DynVoltPredictor3P_Debug *DynVoltPredictor3P_GetDebug(const DynVoltPredict
 }
 #endif
 
-#endif
+#endif /* DYNVOLT_PREDICTOR_3P_H_ */
