@@ -11,8 +11,8 @@ extern "C" {
  * DynVolt 3-phase predictor - one-phase narrow-bank implementation.
  *
  * The public API is kept compatible with the previous DynVoltPredictor3P module.
- * Internally, only phase U is estimated by a narrow frequency-bank RLS/Kalman
- * predictor. The V and W predicted errors are reconstructed from the same
+ * Internally, only logical phase u is estimated by a narrow frequency-bank RLS/Kalman
+ * predictor. The logical v and w predicted errors are reconstructed from the same
  * estimated harmonic coefficients using the configured three-phase sequence.
  *
  * Output convention:
@@ -61,9 +61,9 @@ typedef struct
     float fine_df_hz;
 
     /* Phase shifts used for reconstructing V and W from U.
-     * Default matches the user's working U-W-V correction:
-     *   V = U + 120 deg
-     *   W = U - 120 deg
+     * Default matches the centralized standard u-v-w sequence:
+     *   V = U - 120 deg
+     *   W = U + 120 deg
      */
     float phase_v_shift_rad;
     float phase_w_shift_rad;

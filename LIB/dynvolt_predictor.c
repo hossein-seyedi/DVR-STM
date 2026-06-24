@@ -119,8 +119,8 @@ void DynVoltPredictor3P_GetDefaultConfig(DynVoltPredictor3P_Config *cfg)
     cfg->flicker_hz = 8.8028169f;
     cfg->fine_df_hz = 0.20f;
 
-    cfg->phase_v_shift_rad = DVP_TWO_PI_OVER_3_F;
-    cfg->phase_w_shift_rad = -DVP_TWO_PI_OVER_3_F;
+    cfg->phase_v_shift_rad = -DVP_TWO_PI_OVER_3_F;
+    cfg->phase_w_shift_rad = DVP_TWO_PI_OVER_3_F;
 }
 
 static void DVP_ValidateConfig(DynVoltPredictor3P_Config *cfg)

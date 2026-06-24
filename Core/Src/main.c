@@ -62,7 +62,7 @@ typedef enum
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
 
-#define Version                         "0.0.6"
+#define Version                         "0.0.8"
 
 #define PI_F                            3.1415926f
 #define TWO_PI_F                        (2.0f * PI_F)
@@ -75,6 +75,26 @@ typedef enum
 #define AMC_GAIN                        0.4f
 #define RESISTOR_RATIO                  100.6f
 
+/*
+ * Central phase mapping.
+ *
+ * The hardware has been rewired so that all names are identical everywhere:
+ *   sensor U -> software u -> inverter leg u -> physical U path
+ *   sensor V -> software v -> inverter leg v -> physical V path
+ *   sensor W -> software w -> inverter leg w -> physical W path
+ *
+ * From this point onward, every variable named u/v/w has one single meaning.
+ * No phase swap is allowed inside SOGI, PLL, reference generation, direct
+ * injection, predictor, or PWM output.
+ */
+#define DVR_ADC_HW_U_INDEX              0u
+#define DVR_ADC_HW_V_INDEX              1u
+#define DVR_ADC_HW_W_INDEX              2u
+
+#define DVR_LOGICAL_U_ADC_INDEX         DVR_ADC_HW_U_INDEX
+#define DVR_LOGICAL_V_ADC_INDEX         DVR_ADC_HW_V_INDEX
+#define DVR_LOGICAL_W_ADC_INDEX         DVR_ADC_HW_W_INDEX
+
 #define CONTROL_RATE_HZ                 20000.0f
 #define CONTROL_TS_SEC                  (1.0f / CONTROL_RATE_HZ)
 #define CONTROL_TS_US                   (1000000.0f / CONTROL_RATE_HZ)
@@ -84,7 +104,7 @@ typedef enum
 #define PREDICTOR_TS_SEC                (1.0f / PREDICTOR_RATE_HZ)
 #define PREDICTOR_OVERRUN_LIMIT_US      350.0f
 
-#define ERROR_DELAY_MS_DEFAULT          0.30f
+#define ERROR_DELAY_MS_DEFAULT          0.80f
 #define ERROR_DELAY_BUFFER_LEN          2000u
 #define ERROR_DELAY_SAMPLES_MAX         (ERROR_DELAY_BUFFER_LEN - 1u)
 #define ERROR_DELAY_MS_MAX              (((float)ERROR_DELAY_SAMPLES_MAX * CONTROL_TS_US) / 1000.0f)
@@ -93,7 +113,7 @@ typedef enum
 #define PREDICTOR_HORIZON_MS_MIN        0.0f
 
 #define TOTAL_DELAY_TARGET_MS_DEFAULT   1.00f
-#define PREDICTOR_CALC_DELAY_MS_DEFAULT 0.70f
+#define PREDICTOR_CALC_DELAY_MS_DEFAULT 0.21f
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -113,6 +133,12 @@ static DynVoltPredictor3P g_predictor;
 static DynVoltPredictor3P_Config g_predictor_cfg;
 
 volatile uint16_t adc_buf[ADC_BUF_LEN];
+
+/* Mapping monitor variables for Watch.
+   Values are ADC buffer indices used for logical u/v/w. */
+volatile uint32_t g_adc_map_u_index = DVR_LOGICAL_U_ADC_INDEX;
+volatile uint32_t g_adc_map_v_index = DVR_LOGICAL_V_ADC_INDEX;
+volatile uint32_t g_adc_map_w_index = DVR_LOGICAL_W_ADC_INDEX;
 
 /* Mode variables for Watch:
    g_reference_mode: 0 = SOGI filtered reference, 1 = PLL clean sine reference
@@ -351,9 +377,12 @@ static float adc_diff_to_volts(uint32_t adc_raw)
 
 static void read_adc_voltages(void)
 {
-    g_adc_raw_u = adc_buf[0];
-    g_adc_raw_v = adc_buf[1];
-    g_adc_raw_w = adc_buf[2];
+    /* Apply the only phase mapping in the whole control path.
+       After this function, u/v/w are logical phases and must not be swapped
+       again in the controller. */
+    g_adc_raw_u = adc_buf[DVR_LOGICAL_U_ADC_INDEX];
+    g_adc_raw_v = adc_buf[DVR_LOGICAL_V_ADC_INDEX];
+    g_adc_raw_w = adc_buf[DVR_LOGICAL_W_ADC_INDEX];
 
     g_meas_u = adc_diff_to_volts(g_adc_raw_u);
     g_meas_v = adc_diff_to_volts(g_adc_raw_v);
@@ -388,9 +417,12 @@ static void update_pll(void)
     float max_dev_int;
     float max_dev_out;
 
-    /* Keep the same U-W-V sequence correction as the direct-injection code that works. */
-    alpha = (2.0f / 3.0f) * (g_sogi_u_alpha - 0.5f * g_sogi_w_alpha - 0.5f * g_sogi_v_alpha);
-    beta  = (2.0f / 3.0f) * (SQRT3_OVER_2 * (g_meas_w - g_meas_v));
+    /*
+     * Standard u-v-w phase order after the centralized identity mapping.
+     * alpha is aligned with phase u, and beta is built from v-w.
+     */
+    alpha = (2.0f / 3.0f) * (g_sogi_u_alpha - 0.5f * g_sogi_v_alpha - 0.5f * g_sogi_w_alpha);
+    beta  = (2.0f / 3.0f) * (SQRT3_OVER_2 * (g_sogi_v_alpha - g_sogi_w_alpha));
 
     cos_th = cosf(g_pll_theta);
     sin_th = sinf(g_pll_theta);
@@ -427,9 +459,15 @@ static void build_reference_from_pll(void)
 
     phase_u_angle = g_pll_theta - (PI_F * 0.5f);
 
+    /*
+     * Standard u-v-w sequence:
+     *   u = base phase
+     *   v = u - 120 deg
+     *   w = u + 120 deg
+     */
     g_ref_u = g_clean_reference_phase_peak_volts * sinf(phase_u_angle);
-    g_ref_v = g_clean_reference_phase_peak_volts * sinf(phase_u_angle + TWO_PI_OVER_3);
-    g_ref_w = g_clean_reference_phase_peak_volts * sinf(phase_u_angle - TWO_PI_OVER_3);
+    g_ref_v = g_clean_reference_phase_peak_volts * sinf(phase_u_angle - TWO_PI_OVER_3);
+    g_ref_w = g_clean_reference_phase_peak_volts * sinf(phase_u_angle + TWO_PI_OVER_3);
 }
 
 static void update_selected_reference(void)
@@ -634,7 +672,10 @@ static void apply_pwm_output(void)
     }
     else
     {
-        /* Keep the same coefficient chain as the working direct-injection code. */
+        /*
+         * No phase swap is performed here. g_pwm_u/v/w go directly to inverter
+         * legs u/v/w with the same names.
+         */
         g_pwm_u = g_pwm_reference_gain * sign * cmd.u * Transformer_Ratio;
         g_pwm_v = g_pwm_reference_gain * sign * cmd.v * Transformer_Ratio;
         g_pwm_w = g_pwm_reference_gain * sign * cmd.w * Transformer_Ratio;
@@ -769,7 +810,7 @@ static void service_predictor_horizon_request(void)
     predictor_init_from_runtime_settings();
 }
 
-static void dvr_predictor_step_500hz(void)
+static void dvr_predictor_step(void)
 {
     uint32_t start_cycles;
     uint32_t end_cycles;
@@ -825,7 +866,7 @@ static void dvr_background_step(void)
 
     if (run_predictor != 0u)
     {
-        dvr_predictor_step_500hz();
+        dvr_predictor_step();
     }
 }
 
@@ -976,8 +1017,6 @@ int main(void)
   MX_TIM7_Init();
   /* USER CODE BEGIN 2 */
 	dvr_application_init();
-	g_error_delay_ms_request = 0.8f;
-	service_error_delay_request();
   /* USER CODE END 2 */
 
   /* Infinite loop */
