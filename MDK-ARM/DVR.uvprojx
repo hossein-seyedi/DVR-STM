@@ -598,6 +598,16 @@
               <FileType>5</FileType>
               <FilePath>..\LIB\dynvolt_predictor.h</FilePath>
             </File>
+            <File>
+              <FileName>dynvolt_predictor_complate.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\LIB\dynvolt_predictor_complate.c</FilePath>
+            </File>
+            <File>
+              <FileName>dynvolt_predictor_complate.h</FileName>
+              <FileType>5</FileType>
+              <FilePath>..\LIB\dynvolt_predictor_complate.h</FilePath>
+            </File>
           </Files>
         </Group>
         <Group>

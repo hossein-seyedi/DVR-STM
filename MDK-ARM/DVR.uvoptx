@@ -145,7 +145,7 @@
         <SetRegEntry>
           <Number>0</Number>
           <Key>ST-LINKIII-KEIL_SWO</Key>
-          <Name>-U37FF71064E573436B2C21443 -O2254 -SF10000 -C0 -A0 -I0 -HNlocalhost -HP7184 -P1 -N00("ARM CoreSight SW-DP (ARM Core") -D00(2BA01477) -L00(0) -TO131091 -TC170000000 -TT10000000 -TP21 -TDS8054 -TDT0 -TDC1F -TIEFFFFFFFF -TIP8 -FO7 -FD20000000 -FC1000 -FN1 -FF0STM32G47x-8x_512.FLM -FS08000000 -FL080000 -FP0($$Device:STM32G484VETx$CMSIS\Flash\STM32G47x-8x_512.FLM)</Name>
+          <Name>-U5&amp;617DE1&amp;0&amp;8 -O2254 -SF10000 -C0 -A0 -I0 -HNlocalhost -HP7184 -P1 -N00("ARM CoreSight SW-DP (ARM Core") -D00(2BA01477) -L00(0) -TO131091 -TC170000000 -TT10000000 -TP21 -TDS8054 -TDT0 -TDC1F -TIEFFFFFFFF -TIP8 -FO15 -FD20000000 -FC1000 -FN1 -FF0STM32G47x-8x_512.FLM -FS08000000 -FL080000 -FP0($$Device:STM32G484VETx$CMSIS\Flash\STM32G47x-8x_512.FLM)</Name>
         </SetRegEntry>
       </TargetDriverDllRegistry>
       <Breakpoint/>
@@ -153,142 +153,137 @@
         <Ww>
           <count>0</count>
           <WinNumber>1</WinNumber>
-          <ItemText>g_pwm_output_enabled,0x0A</ItemText>
+          <ItemText>g_meas_u</ItemText>
         </Ww>
         <Ww>
           <count>1</count>
           <WinNumber>1</WinNumber>
-          <ItemText>g_output_mode,0x0A</ItemText>
+          <ItemText>g_meas_v</ItemText>
         </Ww>
         <Ww>
           <count>2</count>
           <WinNumber>1</WinNumber>
-          <ItemText>g_reference_mode,0x0A</ItemText>
+          <ItemText>g_meas_w</ItemText>
         </Ww>
         <Ww>
           <count>3</count>
           <WinNumber>1</WinNumber>
-          <ItemText>g_error_delay_samples_request,0x0A</ItemText>
+          <ItemText>g_pred_err_u</ItemText>
         </Ww>
         <Ww>
           <count>4</count>
           <WinNumber>1</WinNumber>
-          <ItemText>g_error_delay_samples_active,0x0A</ItemText>
+          <ItemText>g_pred_err_v</ItemText>
         </Ww>
         <Ww>
           <count>5</count>
           <WinNumber>1</WinNumber>
-          <ItemText>g_error_delay_request_us,0x0A</ItemText>
+          <ItemText>g_pred_err_w</ItemText>
         </Ww>
         <Ww>
           <count>6</count>
           <WinNumber>1</WinNumber>
-          <ItemText>g_error_delay_active_us</ItemText>
+          <ItemText>g_control_time_us,0x0A</ItemText>
         </Ww>
         <Ww>
           <count>7</count>
           <WinNumber>1</WinNumber>
-          <ItemText>g_meas_u,0x0A</ItemText>
+          <ItemText>g_control_cycles_max,0x0A</ItemText>
         </Ww>
         <Ww>
           <count>8</count>
           <WinNumber>1</WinNumber>
-          <ItemText>g_pll_freq_hz</ItemText>
+          <ItemText>g_control_timing_overrun,0x0A</ItemText>
         </Ww>
         <Ww>
           <count>9</count>
           <WinNumber>1</WinNumber>
-          <ItemText>g_error_delay_samples_request,0x0A</ItemText>
+          <ItemText>g_predictor_time_us</ItemText>
         </Ww>
         <Ww>
           <count>10</count>
           <WinNumber>1</WinNumber>
-          <ItemText>g_error_delay_samples_request,0x0A</ItemText>
+          <ItemText>g_predictor_cycles_max,0x0A</ItemText>
         </Ww>
         <Ww>
           <count>11</count>
           <WinNumber>1</WinNumber>
-          <ItemText>g_pll_theta</ItemText>
+          <ItemText>g_predictor_timing_overrun,0x0A</ItemText>
         </Ww>
         <Ww>
           <count>12</count>
           <WinNumber>1</WinNumber>
-          <ItemText>g_error_delay_ms_request,0x0A</ItemText>
+          <ItemText>g_error_delay_ms_request        ,0x0A</ItemText>
         </Ww>
         <Ww>
           <count>13</count>
           <WinNumber>1</WinNumber>
-          <ItemText>g_err_u,0x0A</ItemText>
+          <ItemText>g_error_delay_ms_active         ,0x0A</ItemText>
         </Ww>
         <Ww>
           <count>14</count>
           <WinNumber>1</WinNumber>
-          <ItemText>g_err_v</ItemText>
+          <ItemText>g_error_delay_samples_active    ,0x0A</ItemText>
         </Ww>
         <Ww>
           <count>15</count>
           <WinNumber>1</WinNumber>
-          <ItemText>g_err_w</ItemText>
+          <ItemText>g_error_delay_limited,0x0A</ItemText>
         </Ww>
         <Ww>
           <count>16</count>
           <WinNumber>1</WinNumber>
-          <ItemText>g_predictor_time_us</ItemText>
+          <ItemText>g_predictor_horizon_ms_request</ItemText>
         </Ww>
         <Ww>
           <count>17</count>
           <WinNumber>1</WinNumber>
-          <ItemText>g_error_delay_reconfigure_count,0x0A</ItemText>
+          <ItemText>g_predictor_horizon_ms_active</ItemText>
         </Ww>
         <Ww>
           <count>18</count>
           <WinNumber>1</WinNumber>
-          <ItemText>g_error_delay_samples_active ,0x0A</ItemText>
+          <ItemText>g_error_delay_ms_request ,0x0A</ItemText>
         </Ww>
         <Ww>
           <count>19</count>
           <WinNumber>1</WinNumber>
-          <ItemText>g_predictor_horizon_ms_active ,0x0A</ItemText>
+          <ItemText>g_pll_freq_hz                  </ItemText>
         </Ww>
         <Ww>
           <count>20</count>
           <WinNumber>1</WinNumber>
-          <ItemText>g_predictor_missed_count ,0x0A</ItemText>
+          <ItemText>g_output_mode    ,0x0A</ItemText>
         </Ww>
         <Ww>
           <count>21</count>
           <WinNumber>1</WinNumber>
-          <ItemText>g_predictor_tick_count ,0x0A</ItemText>
+          <ItemText>g_err_u</ItemText>
         </Ww>
         <Ww>
           <count>22</count>
           <WinNumber>1</WinNumber>
-          <ItemText>g_predictor_horizon_ms_request</ItemText>
+          <ItemText>g_err_v</ItemText>
         </Ww>
         <Ww>
           <count>23</count>
           <WinNumber>1</WinNumber>
-          <ItemText>g_debug_pred_input_minus_delay_u </ItemText>
+          <ItemText>g_err_w</ItemText>
         </Ww>
         <Ww>
           <count>24</count>
           <WinNumber>1</WinNumber>
-          <ItemText>g_predictor_alpha,0x0A</ItemText>
+          <ItemText>g_err_delay_u</ItemText>
         </Ww>
         <Ww>
           <count>25</count>
           <WinNumber>1</WinNumber>
-          <ItemText>g_predictor_active ,0x0A</ItemText>
+          <ItemText>g_err_delay_v</ItemText>
         </Ww>
         <Ww>
           <count>26</count>
           <WinNumber>1</WinNumber>
-          <ItemText>g_predictor_saturated ,0x0A</ItemText>
-        </Ww>
-        <Ww>
-          <count>27</count>
-          <WinNumber>1</WinNumber>
-          <ItemText>g_predictor_missed_count ,0x0A</ItemText>
+          <ItemText>g_err_delay_w</ItemText>
         </Ww>
       </WatchWindow1>
       <Tracepoint>
@@ -853,6 +848,30 @@
       <bDave2>0</bDave2>
       <PathWithFileName>..\LIB\dynvolt_predictor.h</PathWithFileName>
       <FilenameWithoutPath>dynvolt_predictor.h</FilenameWithoutPath>
+      <RteFlg>0</RteFlg>
+      <bShared>0</bShared>
+    </File>
+    <File>
+      <GroupNumber>5</GroupNumber>
+      <FileNumber>40</FileNumber>
+      <FileType>1</FileType>
+      <tvExp>0</tvExp>
+      <tvExpOptDlg>0</tvExpOptDlg>
+      <bDave2>0</bDave2>
+      <PathWithFileName>..\LIB\dynvolt_predictor_complate.c</PathWithFileName>
+      <FilenameWithoutPath>dynvolt_predictor_complate.c</FilenameWithoutPath>
+      <RteFlg>0</RteFlg>
+      <bShared>0</bShared>
+    </File>
+    <File>
+      <GroupNumber>5</GroupNumber>
+      <FileNumber>41</FileNumber>
+      <FileType>5</FileType>
+      <tvExp>0</tvExp>
+      <tvExpOptDlg>0</tvExpOptDlg>
+      <bDave2>0</bDave2>
+      <PathWithFileName>..\LIB\dynvolt_predictor_complate.h</PathWithFileName>
+      <FilenameWithoutPath>dynvolt_predictor_complate.h</FilenameWithoutPath>
       <RteFlg>0</RteFlg>
       <bShared>0</bShared>
     </File>

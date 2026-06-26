@@ -22,12 +22,109 @@ Dialog DLL:      TCM.DLL V1.46.0.0
  
 <h2>Project:</h2>
 D:\STM\DVR-STM\MDK-ARM\DVR.uvprojx
-Project File Date:  06/24/2026
+Project File Date:  06/26/2026
 
 <h2>Output:</h2>
 *** Using Compiler 'V6.14', folder: 'C:\Keil_v5\ARM\ARMCLANG\Bin'
-Build target 'DVR'
-"DVR\DVR.axf" - 0 Error(s), 0 Warning(s).
+Rebuild target 'DVR'
+compiling stm32g4xx_ll_adc.c...
+compiling stm32g4xx_hal.c...
+assembling startup_stm32g484xx.s...
+compiling stm32g4xx_hal_msp.c...
+compiling stm32g4xx_hal_rcc.c...
+compiling gpio.c...
+compiling dma.c...
+compiling adc.c...
+compiling stm32g4xx_it.c...
+compiling tim.c...
+compiling main.c...
+compiling stm32g4xx_hal_adc_ex.c...
+compiling stm32g4xx_hal_rcc_ex.c...
+compiling stm32g4xx_hal_flash.c...
+compiling stm32g4xx_hal_adc.c...
+compiling stm32g4xx_hal_flash_ex.c...
+compiling stm32g4xx_hal_flash_ramfunc.c...
+compiling stm32g4xx_hal_gpio.c...
+compiling stm32g4xx_hal_exti.c...
+compiling stm32g4xx_hal_dma.c...
+compiling stm32g4xx_hal_dma_ex.c...
+compiling sogi.c...
+compiling stm32g4xx_hal_pwr.c...
+compiling stm32g4xx_hal_cortex.c...
+compiling resonator.c...
+compiling stm32g4xx_hal_pwr_ex.c...
+compiling system_stm32g4xx.c...
+compiling dynvolt_lpf.c...
+../LIB/dynvolt_predictor_complate.c(74): error: no member named 'kout_eff' in 'DynVoltPredictor3P_Debug'
+    dbg->kout_eff = 0.0f;
+    ~~~  ^
+../LIB/dynvolt_predictor_complate.c(76): error: no member named 'kres_eff' in 'DynVoltPredictor3P_Debug'
+    dbg->kres_eff = 0.0f;
+    ~~~  ^
+../LIB/dynvolt_predictor_complate.c(78): error: no member named 'td_pred_sec' in 'DynVoltPredictor3P_Debug'
+    dbg->td_pred_sec = 0.0f;
+    ~~~  ^
+../LIB/dynvolt_predictor_complate.c(81): error: no member named 'R_meas' in 'DynVoltPredictor3P_Debug'
+    dbg->R_meas = 0.0f;
+    ~~~  ^
+../LIB/dynvolt_predictor_complate.c(82): error: no member named 'Q_h' in 'DynVoltPredictor3P_Debug'
+    dbg->Q_h = 0.0f;
+    ~~~  ^
+../LIB/dynvolt_predictor_complate.c(83): error: no member named 'Q_dc' in 'DynVoltPredictor3P_Debug'
+    dbg->Q_dc = 0.0f;
+    ~~~  ^
+../LIB/dynvolt_predictor_complate.c(84): error: no member named 'tau_res' in 'DynVoltPredictor3P_Debug'
+    dbg->tau_res = 0.0f;
+    ~~~  ^
+../LIB/dynvolt_predictor_complate.c(85): error: no member named 'tau_der' in 'DynVoltPredictor3P_Debug'
+    dbg->tau_der = 0.0f;
+    ~~~  ^
+../LIB/dynvolt_predictor_complate.c(88): error: no member named 'quiet_score' in 'DynVoltPredictor3P_Debug'
+    dbg->quiet_score = 1.0f;
+    ~~~  ^
+../LIB/dynvolt_predictor_complate.c(94): error: no member named 'de_max_env' in 'DynVoltPredictor3P_Debug'; did you mean 'e_max_env'?
+    dbg->de_max_env = 0.0f;
+         ^~~~~~~~~~
+         e_max_env
+../LIB/dynvolt_predictor.h(93): note: 'e_max_env' declared here
+    float e_max_env;
+          ^
+../LIB/dynvolt_predictor_complate.c(100): error: no member named 'ea_kal_future' in 'DynVoltPredictor3P_Debug'
+    dbg->ea_kal_future = 0.0f;
+    ~~~  ^
+../LIB/dynvolt_predictor_complate.c(101): error: no member named 'eb_kal_future' in 'DynVoltPredictor3P_Debug'
+    dbg->eb_kal_future = 0.0f;
+    ~~~  ^
+../LIB/dynvolt_predictor_complate.c(102): error: no member named 'ec_kal_future' in 'DynVoltPredictor3P_Debug'
+    dbg->ec_kal_future = 0.0f;
+    ~~~  ^
+../LIB/dynvolt_predictor_complate.c(104): error: no member named 'ea_res_future' in 'DynVoltPredictor3P_Debug'
+    dbg->ea_res_future = 0.0f;
+    ~~~  ^
+../LIB/dynvolt_predictor_complate.c(105): error: no member named 'eb_res_future' in 'DynVoltPredictor3P_Debug'
+    dbg->eb_res_future = 0.0f;
+    ~~~  ^
+../LIB/dynvolt_predictor_complate.c(106): error: no member named 'ec_res_future' in 'DynVoltPredictor3P_Debug'
+    dbg->ec_res_future = 0.0f;
+    ~~~  ^
+../LIB/dynvolt_predictor_complate.c(108): error: no member named 'ea_innovation' in 'DynVoltPredictor3P_Debug'
+    dbg->ea_innovation = 0.0f;
+    ~~~  ^
+../LIB/dynvolt_predictor_complate.c(109): error: no member named 'eb_innovation' in 'DynVoltPredictor3P_Debug'
+    dbg->eb_innovation = 0.0f;
+    ~~~  ^
+../LIB/dynvolt_predictor_complate.c(110): error: no member named 'ec_innovation' in 'DynVoltPredictor3P_Debug'
+    dbg->ec_innovation = 0.0f;
+    ~~~  ^
+fatal error: too many errors emitted, stopping now [-ferror-limit=]
+20 errors generated.
+compiling dynvolt_predictor_complate.c...
+compiling pwm_svpwm.c...
+compiling pwm_3leg_sine.c...
+compiling dynvolt_predictor.c...
+compiling stm32g4xx_hal_tim_ex.c...
+compiling stm32g4xx_hal_tim.c...
+"DVR\DVR.axf" - 19 Error(s), 0 Warning(s).
 
 <h2>Software Packages used:</h2>
 
@@ -50,7 +147,8 @@ Package Vendor: Keil
 
    * Component: ARM::CMSIS:CORE:6.2.0
       Include file:  CMSIS\Core\Include\tz_context.h
-Build Time Elapsed:  00:00:00
+Target not created.
+Build Time Elapsed:  00:00:01
 </pre>
 </body>
 </html>

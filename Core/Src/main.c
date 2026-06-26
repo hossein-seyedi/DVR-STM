@@ -61,32 +61,22 @@ typedef enum
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
-
 #define Version                         "0.0.8"
 
+/* Basic math constants */
 #define PI_F                            3.1415926f
 #define TWO_PI_F                        (2.0f * PI_F)
 #define TWO_PI_OVER_3                   (2.0f * PI_F / 3.0f)
 #define SQRT3_OVER_2                    0.8660254f
 
+/* ADC and voltage sensor scaling */
 #define ADC_BUF_LEN                     3u
 #define ADC_VREF                        3.3f
 #define ADC_MAX_VALUE                   4095.0f
 #define AMC_GAIN                        0.4f
 #define RESISTOR_RATIO                  100.6f
 
-/*
- * Central phase mapping.
- *
- * The hardware has been rewired so that all names are identical everywhere:
- *   sensor U -> software u -> inverter leg u -> physical U path
- *   sensor V -> software v -> inverter leg v -> physical V path
- *   sensor W -> software w -> inverter leg w -> physical W path
- *
- * From this point onward, every variable named u/v/w has one single meaning.
- * No phase swap is allowed inside SOGI, PLL, reference generation, direct
- * injection, predictor, or PWM output.
- */
+/* ADC buffer order: U, V, W. Do not swap phases anywhere else. */
 #define DVR_ADC_HW_U_INDEX              0u
 #define DVR_ADC_HW_V_INDEX              1u
 #define DVR_ADC_HW_W_INDEX              2u
@@ -95,23 +85,28 @@ typedef enum
 #define DVR_LOGICAL_V_ADC_INDEX         DVR_ADC_HW_V_INDEX
 #define DVR_LOGICAL_W_ADC_INDEX         DVR_ADC_HW_W_INDEX
 
+/* Fast control loop: 20 kHz = 50 us */
 #define CONTROL_RATE_HZ                 20000.0f
 #define CONTROL_TS_SEC                  (1.0f / CONTROL_RATE_HZ)
 #define CONTROL_TS_US                   (1000000.0f / CONTROL_RATE_HZ)
 #define CONTROL_OVERRUN_LIMIT_US        45.0f
 
+/* Predictor loop: 2 kHz = 0.5 ms */
 #define PREDICTOR_RATE_HZ               2000.0f
 #define PREDICTOR_TS_SEC                (1.0f / PREDICTOR_RATE_HZ)
 #define PREDICTOR_OVERRUN_LIMIT_US      350.0f
 
-#define ERROR_DELAY_MS_DEFAULT          0.80f
+/* Artificial error delay used for tests */
+#define ERROR_DELAY_MS_DEFAULT          5.0f
 #define ERROR_DELAY_BUFFER_LEN          2000u
 #define ERROR_DELAY_SAMPLES_MAX         (ERROR_DELAY_BUFFER_LEN - 1u)
 #define ERROR_DELAY_MS_MAX              (((float)ERROR_DELAY_SAMPLES_MAX * CONTROL_TS_US) / 1000.0f)
 
-#define PREDICTOR_HORIZON_MS_DEFAULT    1.00f
+/* Predictor horizon */
+#define PREDICTOR_HORIZON_MS_DEFAULT    5.00f
 #define PREDICTOR_HORIZON_MS_MIN        0.0f
 
+/* Helper values for manual delay tuning from Watch */
 #define TOTAL_DELAY_TARGET_MS_DEFAULT   1.00f
 #define PREDICTOR_CALC_DELAY_MS_DEFAULT 0.21f
 /* USER CODE END PD */
@@ -124,7 +119,9 @@ typedef enum
 /* Private variables ---------------------------------------------------------*/
 
 /* USER CODE BEGIN PV */
-
+/* -------------------------------------------------------------------------
+ * Main control objects
+ * ------------------------------------------------------------------------- */
 static PWM_3Leg_Handle g_pwm_3leg;
 static PWM_3Leg_Config g_pwm_3leg_cfg;
 static PWM_3Leg_Debug  g_pwm_3leg_dbg;
@@ -132,37 +129,36 @@ static PWM_3Leg_Debug  g_pwm_3leg_dbg;
 static DynVoltPredictor3P g_predictor;
 static DynVoltPredictor3P_Config g_predictor_cfg;
 
+/* ADC DMA buffer: adc_buf[0]=U, adc_buf[1]=V, adc_buf[2]=W */
 volatile uint16_t adc_buf[ADC_BUF_LEN];
 
-/* Mapping monitor variables for Watch.
-   Values are ADC buffer indices used for logical u/v/w. */
+/* -------------------------------------------------------------------------
+ * Watch variables: mapping and modes
+ * ------------------------------------------------------------------------- */
 volatile uint32_t g_adc_map_u_index = DVR_LOGICAL_U_ADC_INDEX;
 volatile uint32_t g_adc_map_v_index = DVR_LOGICAL_V_ADC_INDEX;
 volatile uint32_t g_adc_map_w_index = DVR_LOGICAL_W_ADC_INDEX;
 
-/* Mode variables for Watch:
-   g_reference_mode: 0 = SOGI filtered reference, 1 = PLL clean sine reference
-   g_output_mode:    0 = measured, 1 = reference, 2 = direct injection, 3 = predictor injection
-   g_pwm_output_enabled: 0 = zero PWM command, 1 = selected output mode is applied
-*/
+/* g_reference_mode: 0=SOGI reference, 1=PLL clean sine reference
+ * g_output_mode:    0=measured, 1=reference, 2=direct injection, 3=predictor
+ */
 volatile int g_reference_mode = REF_MODE_PLL_CLEAN;
-volatile int g_output_mode = PWM_MODE_INJECTION_DIRECT;
+volatile int g_output_mode = PWM_MODE_INJECTION_PREDICTOR;
 volatile uint8_t g_pwm_output_enabled = 1u;
 
 static int g_last_output_mode = -1;
 volatile uint32_t g_invalid_output_mode_count = 0u;
 
-/* User settings. These coefficients match the direct-injection program that works. */
+/* Output scaling. These values are kept equal to the working direct-injection version. */
 volatile float g_clean_reference_phase_peak_volts = 325.0f;
 volatile float g_pwm_reference_gain = 1.0f;
 volatile float Transformer_Ratio = 9.58f;
 volatile float g_direct_output_sign = 1.0f;
 volatile float g_injection_output_sign = -1.0f;
 
-/* Runtime delay setting.
-   Change only g_error_delay_ms_request from Watch.
-   The code converts milliseconds to an integer number of 20 kHz samples.
-*/
+/* -------------------------------------------------------------------------
+ * Artificial error delay
+ * ------------------------------------------------------------------------- */
 volatile float g_error_delay_ms_request = ERROR_DELAY_MS_DEFAULT;
 volatile float g_error_delay_ms_active = ERROR_DELAY_MS_DEFAULT;
 volatile uint32_t g_error_delay_samples_active = 0u;
@@ -178,63 +174,20 @@ static float g_err_delay_buf_w[ERROR_DELAY_BUFFER_LEN];
 static uint32_t g_err_delay_index = 0u;
 static uint8_t g_error_delay_primed = 0u;
 
-/* Optional timing helper. This does not automatically change the delay. */
+/* Optional helper only. It does not change the active delay automatically. */
 volatile float g_total_delay_target_ms = TOTAL_DELAY_TARGET_MS_DEFAULT;
 volatile float g_predictor_calc_delay_assumed_ms = PREDICTOR_CALC_DELAY_MS_DEFAULT;
 volatile float g_error_delay_suggested_ms = ERROR_DELAY_MS_DEFAULT;
 volatile uint32_t g_error_delay_suggested_samples = 0u;
 
-/* Predictor horizon setting.
-   Change g_predictor_horizon_ms_request from Watch if needed.
-   No 1 ms upper clamp is used here.
-*/
+/* -------------------------------------------------------------------------
+ * Predictor settings and monitor variables
+ * ------------------------------------------------------------------------- */
 volatile float g_predictor_horizon_ms_request = PREDICTOR_HORIZON_MS_DEFAULT;
 volatile float g_predictor_horizon_ms_active = PREDICTOR_HORIZON_MS_DEFAULT;
 volatile uint32_t g_predictor_reconfigure_count = 0u;
 static float g_predictor_horizon_ms_request_last = -1.0f;
 
-/* Raw ADC */
-volatile uint16_t g_adc_raw_u = 0u;
-volatile uint16_t g_adc_raw_v = 0u;
-volatile uint16_t g_adc_raw_w = 0u;
-
-/* Measured voltages */
-volatile float g_meas_u = 0.0f;
-volatile float g_meas_v = 0.0f;
-volatile float g_meas_w = 0.0f;
-
-/* SOGI outputs */
-volatile float g_sogi_u_alpha = 0.0f;
-volatile float g_sogi_u_beta  = 0.0f;
-volatile float g_sogi_v_alpha = 0.0f;
-volatile float g_sogi_v_beta  = 0.0f;
-volatile float g_sogi_w_alpha = 0.0f;
-volatile float g_sogi_w_beta  = 0.0f;
-
-/* PLL monitor variables */
-volatile float g_pll_theta = 0.0f;
-volatile float g_pll_freq_hz = 50.0f;
-volatile float g_pll_error = 0.0f;
-
-/* Active reference */
-volatile float g_ref_u = 0.0f;
-volatile float g_ref_v = 0.0f;
-volatile float g_ref_w = 0.0f;
-
-/* Error, delayed error, and direct injection */
-volatile float g_err_u = 0.0f;
-volatile float g_err_v = 0.0f;
-volatile float g_err_w = 0.0f;
-
-volatile float g_err_delay_u = 0.0f;
-volatile float g_err_delay_v = 0.0f;
-volatile float g_err_delay_w = 0.0f;
-
-volatile float g_inj_u = 0.0f;
-volatile float g_inj_v = 0.0f;
-volatile float g_inj_w = 0.0f;
-
-/* Predictor input, output, and monitor variables */
 volatile float g_pred_input_err_u = 0.0f;
 volatile float g_pred_input_err_v = 0.0f;
 volatile float g_pred_input_err_w = 0.0f;
@@ -257,18 +210,61 @@ volatile float g_predictor_alpha = 0.0f;
 volatile uint8_t g_predictor_active = 0u;
 volatile uint8_t g_predictor_saturated = 0u;
 
-/* Final PWM command */
+volatile uint8_t g_predictor_run_request = 0u;
+volatile uint8_t g_predictor_is_running = 0u;
+volatile uint32_t g_predictor_tick_count = 0u;
+volatile uint32_t g_predictor_missed_count = 0u;
+
+/* -------------------------------------------------------------------------
+ * Signal monitor variables
+ * ------------------------------------------------------------------------- */
+volatile uint16_t g_adc_raw_u = 0u;
+volatile uint16_t g_adc_raw_v = 0u;
+volatile uint16_t g_adc_raw_w = 0u;
+
+volatile float g_meas_u = 0.0f;
+volatile float g_meas_v = 0.0f;
+volatile float g_meas_w = 0.0f;
+
+volatile float g_sogi_u_alpha = 0.0f;
+volatile float g_sogi_u_beta  = 0.0f;
+volatile float g_sogi_v_alpha = 0.0f;
+volatile float g_sogi_v_beta  = 0.0f;
+volatile float g_sogi_w_alpha = 0.0f;
+volatile float g_sogi_w_beta  = 0.0f;
+
+volatile float g_pll_theta = 0.0f;
+volatile float g_pll_freq_hz = 50.0f;
+volatile float g_pll_error = 0.0f;
+
+volatile float g_ref_u = 0.0f;
+volatile float g_ref_v = 0.0f;
+volatile float g_ref_w = 0.0f;
+
+volatile float g_err_u = 0.0f;
+volatile float g_err_v = 0.0f;
+volatile float g_err_w = 0.0f;
+
+volatile float g_err_delay_u = 0.0f;
+volatile float g_err_delay_v = 0.0f;
+volatile float g_err_delay_w = 0.0f;
+
+volatile float g_inj_u = 0.0f;
+volatile float g_inj_v = 0.0f;
+volatile float g_inj_w = 0.0f;
+
 volatile float g_pwm_u = 0.0f;
 volatile float g_pwm_v = 0.0f;
 volatile float g_pwm_w = 0.0f;
 
-/* SOGI objects */
+/* -------------------------------------------------------------------------
+ * SOGI and PLL internal states
+ * ------------------------------------------------------------------------- */
 static SOGI_Config sogi_cfg;
 static SOGI_State sogi_u_state;
 static SOGI_State sogi_v_state;
 static SOGI_State sogi_w_state;
 
-/* PLL internal variables */
 static float pll_ts = CONTROL_TS_SEC;
 static float pll_kp = 80.0f;
 static float pll_ki = 2000.0f;
@@ -276,16 +272,13 @@ static float pll_integrator = 0.0f;
 static float pll_omega = TWO_PI_F * 50.0f;
 static float pll_omega_nominal = TWO_PI_F * 50.0f;
 
-/* Timing monitor */
+/* -------------------------------------------------------------------------
+ * Timing monitor variables
+ * ------------------------------------------------------------------------- */
 volatile uint32_t g_control_cycles = 0u;
 volatile uint32_t g_control_cycles_max = 0u;
 volatile float g_control_time_us = 0.0f;
 volatile uint8_t g_control_timing_overrun = 0u;
-
-volatile uint8_t g_predictor_run_request = 0u;
-volatile uint8_t g_predictor_is_running = 0u;
-volatile uint32_t g_predictor_tick_count = 0u;
-volatile uint32_t g_predictor_missed_count = 0u;
 
 volatile uint32_t g_predictor_cycles = 0u;
 volatile uint32_t g_predictor_cycles_max = 0u;
@@ -304,26 +297,42 @@ static void dvr_application_init(void);
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
-
+/* -------------------------------------------------------------------------
+ * Small utility functions
+ * ------------------------------------------------------------------------- */
 static float clampf(float x, float min_val, float max_val)
 {
-    if (x < min_val) return min_val;
-    if (x > max_val) return max_val;
+    if (x < min_val)
+    {
+        return min_val;
+    }
+
+    if (x > max_val)
+    {
+        return max_val;
+    }
+
     return x;
 }
 
 static uint32_t clamp_u32(uint32_t x, uint32_t min_val, uint32_t max_val)
 {
-    if (x < min_val) return min_val;
-    if (x > max_val) return max_val;
+    if (x < min_val)
+    {
+        return min_val;
+    }
+
+    if (x > max_val)
+    {
+        return max_val;
+    }
+
     return x;
 }
 
 static float cycles_to_us(uint32_t cycles)
 {
-    float cycles_per_us;
-
-    cycles_per_us = ((float)SystemCoreClock) / 1000000.0f;
+    float cycles_per_us = ((float)SystemCoreClock) / 1000000.0f;
 
     if (cycles_per_us <= 0.0f)
     {
@@ -333,11 +342,19 @@ static float cycles_to_us(uint32_t cycles)
     return ((float)cycles) / cycles_per_us;
 }
 
-static float wrap_0_2pi(float x)
+static float wrap_0_2pi(float angle_rad)
 {
-    while (x >= TWO_PI_F) x -= TWO_PI_F;
-    while (x < 0.0f)      x += TWO_PI_F;
-    return x;
+    while (angle_rad >= TWO_PI_F)
+    {
+        angle_rad -= TWO_PI_F;
+    }
+
+    while (angle_rad < 0.0f)
+    {
+        angle_rad += TWO_PI_F;
+    }
+
+    return angle_rad;
 }
 
 static uint32_t delay_ms_to_samples(float delay_ms)
@@ -352,9 +369,8 @@ static uint32_t delay_ms_to_samples(float delay_ms)
 
     delay_us = delay_ms * 1000.0f;
     samples = (uint32_t)((delay_us / CONTROL_TS_US) + 0.5f);
-    samples = clamp_u32(samples, 0u, ERROR_DELAY_SAMPLES_MAX);
 
-    return samples;
+    return clamp_u32(samples, 0u, ERROR_DELAY_SAMPLES_MAX);
 }
 
 static float delay_samples_to_ms(uint32_t delay_samples)
@@ -362,24 +378,22 @@ static float delay_samples_to_ms(uint32_t delay_samples)
     return (((float)delay_samples * CONTROL_TS_US) / 1000.0f);
 }
 
+/* -------------------------------------------------------------------------
+ * ADC measurement
+ * ------------------------------------------------------------------------- */
 static float adc_diff_to_volts(uint32_t adc_raw)
 {
     float adc_diff_volts;
     float sensor_input_volts;
-    float line_volts;
 
     adc_diff_volts = (((float)adc_raw / ADC_MAX_VALUE) * 2.0f * ADC_VREF) - ADC_VREF;
     sensor_input_volts = adc_diff_volts / AMC_GAIN;
-    line_volts = sensor_input_volts * RESISTOR_RATIO;
 
-    return line_volts;
+    return sensor_input_volts * RESISTOR_RATIO;
 }
 
 static void read_adc_voltages(void)
 {
-    /* Apply the only phase mapping in the whole control path.
-       After this function, u/v/w are logical phases and must not be swapped
-       again in the controller. */
     g_adc_raw_u = adc_buf[DVR_LOGICAL_U_ADC_INDEX];
     g_adc_raw_v = adc_buf[DVR_LOGICAL_V_ADC_INDEX];
     g_adc_raw_w = adc_buf[DVR_LOGICAL_W_ADC_INDEX];
@@ -389,6 +403,9 @@ static void read_adc_voltages(void)
     g_meas_w = adc_diff_to_volts(g_adc_raw_w);
 }
 
+/* -------------------------------------------------------------------------
+ * SOGI and PLL reference generation
+ * ------------------------------------------------------------------------- */
 static void update_sogi(void)
 {
     SOGI_Output out_u;
@@ -401,8 +418,10 @@ static void update_sogi(void)
 
     g_sogi_u_alpha = out_u.v_alpha;
     g_sogi_u_beta  = out_u.v_beta;
+
     g_sogi_v_alpha = out_v.v_alpha;
     g_sogi_v_beta  = out_v.v_beta;
+
     g_sogi_w_alpha = out_w.v_alpha;
     g_sogi_w_beta  = out_w.v_beta;
 }
@@ -411,38 +430,31 @@ static void update_pll(void)
 {
     float alpha;
     float beta;
+    float error_volts;
     float cos_th;
     float sin_th;
-    float error_volts;
-    float max_dev_int;
-    float max_dev_out;
 
-    /*
-     * Standard u-v-w phase order after the centralized identity mapping.
-     * alpha is aligned with phase u, and beta is built from v-w.
-     */
+    /* Clarke transform from filtered U/V/W to alpha/beta. */
     alpha = (2.0f / 3.0f) * (g_sogi_u_alpha - 0.5f * g_sogi_v_alpha - 0.5f * g_sogi_w_alpha);
     beta  = (2.0f / 3.0f) * (SQRT3_OVER_2 * (g_sogi_v_alpha - g_sogi_w_alpha));
 
     cos_th = cosf(g_pll_theta);
     sin_th = sinf(g_pll_theta);
 
+    /* PLL q-axis error. The goal is to drive this value to zero. */
     error_volts = (beta * cos_th) - (alpha * sin_th);
     g_pll_error = -(error_volts / g_clean_reference_phase_peak_volts);
 
     pll_integrator += pll_ki * pll_ts * g_pll_error;
-
-    max_dev_int = TWO_PI_F * 10.0f;
-    max_dev_out = TWO_PI_F * 20.0f;
-
-    pll_integrator = clampf(pll_integrator, -max_dev_int, max_dev_int);
+    pll_integrator = clampf(pll_integrator, -(TWO_PI_F * 10.0f), (TWO_PI_F * 10.0f));
 
     pll_omega = pll_omega_nominal + (pll_kp * g_pll_error) + pll_integrator;
-    pll_omega = clampf(pll_omega, pll_omega_nominal - max_dev_out, pll_omega_nominal + max_dev_out);
+    pll_omega = clampf(pll_omega,
+                       pll_omega_nominal - (TWO_PI_F * 20.0f),
+                       pll_omega_nominal + (TWO_PI_F * 20.0f));
 
     g_pll_theta += pll_omega * pll_ts;
     g_pll_theta = wrap_0_2pi(g_pll_theta);
-
     g_pll_freq_hz = pll_omega / TWO_PI_F;
 }
 
@@ -455,16 +467,8 @@ static void build_reference_from_sogi(void)
 
 static void build_reference_from_pll(void)
 {
-    float phase_u_angle;
+    float phase_u_angle = g_pll_theta - (PI_F * 0.5f);
 
-    phase_u_angle = g_pll_theta - (PI_F * 0.5f);
-
-    /*
-     * Standard u-v-w sequence:
-     *   u = base phase
-     *   v = u - 120 deg
-     *   w = u + 120 deg
-     */
     g_ref_u = g_clean_reference_phase_peak_volts * sinf(phase_u_angle);
     g_ref_v = g_clean_reference_phase_peak_volts * sinf(phase_u_angle - TWO_PI_OVER_3);
     g_ref_w = g_clean_reference_phase_peak_volts * sinf(phase_u_angle + TWO_PI_OVER_3);
@@ -472,7 +476,6 @@ static void build_reference_from_pll(void)
 
 static void update_selected_reference(void)
 {
-    /* Keep both algorithms alive all the time, exactly like the working direct-injection code. */
     update_sogi();
     update_pll();
 
@@ -486,6 +489,9 @@ static void update_selected_reference(void)
     }
 }
 
+/* -------------------------------------------------------------------------
+ * Error, artificial delay, and direct injection
+ * ------------------------------------------------------------------------- */
 static void build_error(void)
 {
     g_err_u = g_ref_u - g_meas_u;
@@ -516,9 +522,7 @@ static void reset_error_delay_buffer(void)
 
 static void update_error_delay(void)
 {
-    uint32_t delay_samples;
-
-    delay_samples = g_error_delay_samples_active;
+    uint32_t delay_samples = g_error_delay_samples_active;
 
     if (g_error_delay_primed == 0u)
     {
@@ -533,24 +537,26 @@ static void update_error_delay(void)
         g_err_delay_w = g_err_w;
         g_err_delay_index = 0u;
         g_error_delay_ready = 1u;
+        g_error_delay_sample_count++;
+        return;
     }
-    else
+
+    /* Read the old value first. This creates the delay. */
+    g_err_delay_u = g_err_delay_buf_u[g_err_delay_index];
+    g_err_delay_v = g_err_delay_buf_v[g_err_delay_index];
+    g_err_delay_w = g_err_delay_buf_w[g_err_delay_index];
+
+    /* Store the new value for a future control step. */
+    g_err_delay_buf_u[g_err_delay_index] = g_err_u;
+    g_err_delay_buf_v[g_err_delay_index] = g_err_v;
+    g_err_delay_buf_w[g_err_delay_index] = g_err_w;
+
+    g_err_delay_index++;
+
+    if (g_err_delay_index >= delay_samples)
     {
-        g_err_delay_u = g_err_delay_buf_u[g_err_delay_index];
-        g_err_delay_v = g_err_delay_buf_v[g_err_delay_index];
-        g_err_delay_w = g_err_delay_buf_w[g_err_delay_index];
-
-        g_err_delay_buf_u[g_err_delay_index] = g_err_u;
-        g_err_delay_buf_v[g_err_delay_index] = g_err_v;
-        g_err_delay_buf_w[g_err_delay_index] = g_err_w;
-
-        g_err_delay_index++;
-
-        if (g_err_delay_index >= delay_samples)
-        {
-            g_err_delay_index = 0u;
-            g_error_delay_ready = 1u;
-        }
+        g_err_delay_index = 0u;
+        g_error_delay_ready = 1u;
     }
 
     g_error_delay_sample_count++;
@@ -558,12 +564,14 @@ static void update_error_delay(void)
 
 static void build_direct_injection(void)
 {
-    /* This is the same injection rule as the working program, with only optional delay added. */
     g_inj_u = -g_err_delay_u;
     g_inj_v = -g_err_delay_v;
     g_inj_w = -g_err_delay_w;
 }
 
+/* -------------------------------------------------------------------------
+ * Predictor injection
+ * ------------------------------------------------------------------------- */
 static void filter_predictor_input_error(void)
 {
     const float alpha = 0.6341f;
@@ -573,7 +581,6 @@ static void filter_predictor_input_error(void)
         g_pred_input_err_filt_u = g_pred_input_err_u;
         g_pred_input_err_filt_v = g_pred_input_err_v;
         g_pred_input_err_filt_w = g_pred_input_err_w;
-
         g_predictor_error_filter_primed = 1u;
         return;
     }
@@ -625,6 +632,9 @@ static void build_predictor_injection(void)
     }
 }
 
+/* -------------------------------------------------------------------------
+ * PWM command selection and output
+ * ------------------------------------------------------------------------- */
 static void select_pwm_command(Phase3f *cmd, float *sign)
 {
     if (g_output_mode == PWM_MODE_MEASURED_DIRECT)
@@ -633,28 +643,31 @@ static void select_pwm_command(Phase3f *cmd, float *sign)
         cmd->v = g_meas_v;
         cmd->w = g_meas_w;
         *sign = g_direct_output_sign;
+        return;
     }
-    else if (g_output_mode == PWM_MODE_REFERENCE_DIRECT)
+
+    if (g_output_mode == PWM_MODE_REFERENCE_DIRECT)
     {
         cmd->u = g_ref_u;
         cmd->v = g_ref_v;
         cmd->w = g_ref_w;
         *sign = g_direct_output_sign;
+        return;
     }
-    else if (g_output_mode == PWM_MODE_INJECTION_PREDICTOR)
+
+    if (g_output_mode == PWM_MODE_INJECTION_PREDICTOR)
     {
         cmd->u = g_pred_inj_u;
         cmd->v = g_pred_inj_v;
         cmd->w = g_pred_inj_w;
         *sign = g_injection_output_sign;
+        return;
     }
-    else
-    {
-        cmd->u = g_inj_u;
-        cmd->v = g_inj_v;
-        cmd->w = g_inj_w;
-        *sign = g_injection_output_sign;
-    }
+
+    cmd->u = g_inj_u;
+    cmd->v = g_inj_v;
+    cmd->w = g_inj_w;
+    *sign = g_injection_output_sign;
 }
 
 static void apply_pwm_output(void)
@@ -672,10 +685,6 @@ static void apply_pwm_output(void)
     }
     else
     {
-        /*
-         * No phase swap is performed here. g_pwm_u/v/w go directly to inverter
-         * legs u/v/w with the same names.
-         */
         g_pwm_u = g_pwm_reference_gain * sign * cmd.u * Transformer_Ratio;
         g_pwm_v = g_pwm_reference_gain * sign * cmd.v * Transformer_Ratio;
         g_pwm_w = g_pwm_reference_gain * sign * cmd.w * Transformer_Ratio;
@@ -708,6 +717,9 @@ static void handle_mode_change(void)
     }
 }
 
+/* -------------------------------------------------------------------------
+ * Runtime settings from Watch
+ * ------------------------------------------------------------------------- */
 static void dwt_init(void)
 {
     CoreDebug->DEMCR |= CoreDebug_DEMCR_TRCENA_Msk;
@@ -717,9 +729,7 @@ static void dwt_init(void)
 
 static void predictor_init_from_runtime_settings(void)
 {
-    float horizon_ms;
-
-    horizon_ms = g_predictor_horizon_ms_request;
+    float horizon_ms = g_predictor_horizon_ms_request;
 
     if (horizon_ms < PREDICTOR_HORIZON_MS_MIN)
     {
@@ -761,10 +771,8 @@ static void update_delay_suggestion(void)
 
 static void service_error_delay_request(void)
 {
-    float request_ms;
+    float request_ms = g_error_delay_ms_request;
     uint32_t samples;
-
-    request_ms = g_error_delay_ms_request;
 
     if (fabsf(request_ms - g_error_delay_ms_request_last) <= 0.0001f)
     {
@@ -798,9 +806,7 @@ static void service_error_delay_request(void)
 
 static void service_predictor_horizon_request(void)
 {
-    float request_ms;
-
-    request_ms = g_predictor_horizon_ms_request;
+    float request_ms = g_predictor_horizon_ms_request;
 
     if (fabsf(request_ms - g_predictor_horizon_ms_request_last) <= 0.0001f)
     {
@@ -810,20 +816,19 @@ static void service_predictor_horizon_request(void)
     predictor_init_from_runtime_settings();
 }
 
+/* -------------------------------------------------------------------------
+ * Main runtime steps
+ * ------------------------------------------------------------------------- */
 static void dvr_predictor_step(void)
 {
     uint32_t start_cycles;
-    uint32_t end_cycles;
     uint32_t elapsed_cycles;
 
     g_predictor_is_running = 1u;
 
     start_cycles = DWT->CYCCNT;
-
     build_predictor_injection();
-
-    end_cycles = DWT->CYCCNT;
-    elapsed_cycles = end_cycles - start_cycles;
+    elapsed_cycles = DWT->CYCCNT - start_cycles;
 
     g_predictor_cycles = elapsed_cycles;
 
@@ -844,13 +849,11 @@ static void dvr_predictor_step(void)
 
 static void dvr_background_step(void)
 {
-    uint8_t run_predictor;
+    uint8_t run_predictor = 0u;
 
     update_delay_suggestion();
     service_error_delay_request();
     service_predictor_horizon_request();
-
-    run_predictor = 0u;
 
     if (g_predictor_run_request != 0u)
     {
@@ -873,7 +876,6 @@ static void dvr_background_step(void)
 static void dvr_control_step_20khz(void)
 {
     uint32_t start_cycles;
-    uint32_t end_cycles;
     uint32_t elapsed_cycles;
 
     start_cycles = DWT->CYCCNT;
@@ -886,9 +888,7 @@ static void dvr_control_step_20khz(void)
     build_direct_injection();
     apply_pwm_output();
 
-    end_cycles = DWT->CYCCNT;
-    elapsed_cycles = end_cycles - start_cycles;
-
+    elapsed_cycles = DWT->CYCCNT - start_cycles;
     g_control_cycles = elapsed_cycles;
 
     if (elapsed_cycles > g_control_cycles_max)
@@ -904,7 +904,10 @@ static void dvr_control_step_20khz(void)
     }
 }
 
-static void dvr_application_init(void)
+/* -------------------------------------------------------------------------
+ * Application initialization
+ * ------------------------------------------------------------------------- */
+static void init_adc_calibration(void)
 {
     HAL_ADC_Stop(&hadc4);
 
@@ -912,7 +915,18 @@ static void dvr_application_init(void)
     {
         Error_Handler();
     }
+}
 
+static void start_adc_dma(void)
+{
+    if (HAL_ADC_Start_DMA(&hadc4, (uint32_t*)adc_buf, ADC_BUF_LEN) != HAL_OK)
+    {
+        Error_Handler();
+    }
+}
+
+static void init_sogi_pll(void)
+{
     sogi_cfg.Ts = CONTROL_TS_SEC;
     sogi_cfg.k  = 0.8f;
     sogi_cfg.w  = TWO_PI_F * 50.0f;
@@ -926,14 +940,15 @@ static void dvr_application_init(void)
     pll_omega_nominal = TWO_PI_F * 50.0f;
     pll_omega = pll_omega_nominal;
     pll_ts = CONTROL_TS_SEC;
+}
 
-    /* Default mode matches the working direct-injection program. */
+static void init_user_settings(void)
+{
     g_reference_mode = REF_MODE_PLL_CLEAN;
-    g_output_mode = PWM_MODE_INJECTION_DIRECT;
+    g_output_mode = PWM_MODE_INJECTION_PREDICTOR;
     g_last_output_mode = -1;
     g_pwm_output_enabled = 1u;
 
-    /* Keep the direct-injection coefficients exactly as the working program. */
     g_pwm_reference_gain = 1.0f;
     Transformer_Ratio = 9.58f;
     g_direct_output_sign = 1.0f;
@@ -947,12 +962,10 @@ static void dvr_application_init(void)
     g_predictor_horizon_ms_request = PREDICTOR_HORIZON_MS_DEFAULT;
     g_predictor_horizon_ms_request_last = -1.0f;
     predictor_init_from_runtime_settings();
+}
 
-    if (HAL_ADC_Start_DMA(&hadc4, (uint32_t*)adc_buf, ADC_BUF_LEN) != HAL_OK)
-    {
-        Error_Handler();
-    }
-
+static void init_pwm_output(void)
+{
     g_pwm_3leg_cfg.vdc_volts = 400.0f;
     g_pwm_3leg_cfg.output_freq_hz = 50.0f;
     g_pwm_3leg_cfg.pwm_update_hz = CONTROL_RATE_HZ;
@@ -971,13 +984,26 @@ static void dvr_application_init(void)
     HAL_TIMEx_PWMN_Start(&htim1, TIM_CHANNEL_1);
     HAL_TIMEx_PWMN_Start(&htim1, TIM_CHANNEL_2);
     HAL_TIMEx_PWMN_Start(&htim1, TIM_CHANNEL_3);
+}
 
+static void init_timers(void)
+{
     HAL_TIM_Base_Start(&htim6);
 
     if (HAL_TIM_Base_Start_IT(&htim7) != HAL_OK)
     {
         Error_Handler();
     }
+}
+
+static void dvr_application_init(void)
+{
+    init_adc_calibration();
+    init_sogi_pll();
+    init_user_settings();
+    start_adc_dma();
+    init_pwm_output();
+    init_timers();
 }
 /* USER CODE END 0 */
 
@@ -1016,7 +1042,7 @@ int main(void)
   MX_TIM1_Init();
   MX_TIM7_Init();
   /* USER CODE BEGIN 2 */
-	dvr_application_init();
+    dvr_application_init();
   /* USER CODE END 2 */
 
   /* Infinite loop */
